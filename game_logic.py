@@ -1,0 +1,49 @@
+from input_parser import InputParser
+from board import Board
+from game_controller import GameController
+from piece import Piece
+
+
+class GameLogic:
+    def process_input(self, input_text):
+        lines = [line.strip() for line in input_text.split('\n') if line.strip()]
+
+        # 1. מציאת גבול הלוח
+        board_lines = []
+        commands = []
+        is_commands = False
+        for line in lines:
+            if line == "Commands:":
+                is_commands = True
+                continue
+            if not is_commands and line != "Board:":
+                board_lines.append(line.split())
+            elif is_commands:
+                commands.append(line)
+
+        # 2. בדיקות תקינות (הכי חשוב!)
+        width = len(board_lines[0])
+        for row in board_lines:
+            if len(row) != width:
+                print("ERROR ROW_WIDTH_MISMATCH")
+                return  # עוצרים!
+            for token in row:
+                if token != '.' and not Piece.is_valid_token(token):
+                    print("ERROR UNKNOWN_TOKEN")
+                    return  # עוצרים!
+
+                # 3. אתחול
+                # במקום לשלוח board_lines, נשלח אותו כפי שהוא למתודה שתומכת ברשימות
+        board = Board(InputParser.parse_board_from_list(board_lines))
+        controller = GameController(board)
+
+        # 4. ביצוע פקודות
+        for cmd in commands:
+            p = cmd.split()
+            if not p: continue
+            if p[0] == "click":
+                controller.handle_click(int(p[1]), int(p[2]))
+            elif p[0] == "wait":  # הוספנו את זה!
+                controller.handle_wait(int(p[1]))
+            elif p[0] == "print" and p[1] == "board":
+                board.display()
