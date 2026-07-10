@@ -17,7 +17,7 @@ class GameController:
                 self._board.execute_move(r, c, row, col)
             self._selected_piece = None
         else:
-            if target and target.color == WHITE_TURN:
+            if target:
                 self._selected_piece = target
 
     def handle_wait(self, ms):
