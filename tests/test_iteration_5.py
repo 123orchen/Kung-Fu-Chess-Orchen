@@ -1,7 +1,7 @@
 import pytest
 from piece import Piece
 from board import Board
-from moveResolver import MoveResolver
+from rule_engine import RuleEngine
 from config import PAWN, WHITE_TURN, BLACK_TURN
 
 
@@ -14,10 +14,10 @@ def test_pawn_movement():
     pawn = board.get_piece(1, 1)
 
     # בדיקת צעד יחיד קדימה (למעלה) - חוקי
-    assert MoveResolver.is_legal(board, pawn, 0, 1) is True
+    assert RuleEngine.is_legal(board, pawn, 0, 1) is True
 
     # בדיקת צעד כפול - לא חוקי
-    assert MoveResolver.is_legal(board, pawn, -1, 1) is False
+    assert RuleEngine.is_legal(board, pawn, -1, 1) is False
 
 
 def test_pawn_capture():
@@ -29,11 +29,11 @@ def test_pawn_capture():
     pawn = board.get_piece(1, 1)
 
     # 1. בדיקת תפיסה באלכסון - חוקי
-    assert MoveResolver.is_legal(board, pawn, 0, 0) is True
+    assert RuleEngine.is_legal(board, pawn, 0, 0) is True
 
     # 2. בדיקת תפיסה ישרה (קדימה) - לא חוקי כי יש שם כלי!
     # לפי חוקי השחמט, חייל לא יכול לתפוס כלי שנמצא בדיוק מולו.
-    assert MoveResolver.is_legal(board, pawn, 0, 1) is False
+    assert RuleEngine.is_legal(board, pawn, 0, 1) is False
 
 
 def test_black_pawn_direction():
@@ -45,6 +45,6 @@ def test_black_pawn_direction():
     pawn = board.get_piece(1, 1)
 
     # זז למטה (2,1) - חוקי
-    assert MoveResolver.is_legal(board, pawn, 2, 1) is True
+    assert RuleEngine.is_legal(board, pawn, 2, 1) is True
     # זז למעלה (0,1) - לא חוקי
-    assert MoveResolver.is_legal(board, pawn, 0, 1) is False
+    assert RuleEngine.is_legal(board, pawn, 0, 1) is False

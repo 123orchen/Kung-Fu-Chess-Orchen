@@ -1,5 +1,5 @@
 from move import Move
-from moveResolver import MoveResolver
+from rule_engine import RuleEngine
 
 
 class GameEngine:
@@ -22,7 +22,7 @@ class GameEngine:
             return False
 
         # 3. בדיקת חוקיות
-        if MoveResolver.is_legal(self._board, piece, to_r, to_c):
+        if RuleEngine.is_legal(self._board, piece, to_r, to_c):
             r, c = self._board.find_piece(piece)
             move = Move(piece, r, c, to_r, to_c, arrival_time)
             self._scheduler.schedule(move)
