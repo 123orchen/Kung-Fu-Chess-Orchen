@@ -11,11 +11,13 @@ class Board:
 
     def execute_move(self, from_r, from_c, to_r, to_c):
         piece = self._grid[from_r][from_c]
-        target = self._grid[to_r][to_c]
-        if target:
-            del self._piece_locations[target]
+        if not piece: return  # הגנה למקרה שהכלי לא נמצא
+
+        # עדכון המטריצה
         self._grid[to_r][to_c] = piece
         self._grid[from_r][from_c] = None
+
+        # עדכון מילון המיקומים (חשוב לחישובים הבאים!)
         self._piece_locations[piece] = (to_r, to_c)
 
     def find_piece(self, piece):

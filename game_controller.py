@@ -1,24 +1,27 @@
-from moveResolver import MoveResolver
-from config import CELL_SIZE, WHITE_TURN
+from board_mapper import BoardMapper
 
 
 class GameController:
-    def __init__(self, board):
+    def __init__(self, board, engine, scheduler):
         self._board = board
+        self._engine = engine
+        self._scheduler = scheduler
+        self._current_time = 0
         self._selected_piece = None
 
+    def handle_wait(self, ms):
+        self._current_time += ms
+        self._engine.process_time_step(self._current_time)
+
     def handle_click(self, x, y):
-        col, row = x // CELL_SIZE, y // CELL_SIZE
+        col, row = BoardMapper.pixel_to_coords(x, y)
         target = self._board.get_piece(row, col)
 
         if self._selected_piece:
-            if MoveResolver.is_legal(self._board, self._selected_piece, row, col):
-                r, c = self._board.find_piece(self._selected_piece)
-                self._board.execute_move(r, c, row, col)
+            if not self._scheduler.is_piece_moving(self._selected_piece):
+                # בקשה מהמנוע לבצע את המהלך
+                self._engine.request_move(self._selected_piece, row, col, self._current_time + 1000)
             self._selected_piece = None
         else:
-            if target:
+            if target and not self._scheduler.is_piece_moving(target):
                 self._selected_piece = target
-
-    def handle_wait(self, ms):
-        pass  # לא עושה כלום בלוח, רק מקדם זמן
