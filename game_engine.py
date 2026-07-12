@@ -13,6 +13,15 @@ class GameEngine:
             self._board.execute_move(m.from_r, m.from_c, m.to_r, m.to_c)
 
     def request_move(self, piece, to_r, to_c, arrival_time):
+        # 1. בדיקה אם הכלי כבר בתנועה (No Premove)
+        if self._scheduler.is_piece_moving(piece):
+            return False
+
+        # 2. בדיקת התנגשות (Test 1)
+        if self._scheduler.is_route_blocked(piece, to_r, to_c):
+            return False
+
+        # 3. בדיקת חוקיות
         if MoveResolver.is_legal(self._board, piece, to_r, to_c):
             r, c = self._board.find_piece(piece)
             move = Move(piece, r, c, to_r, to_c, arrival_time)
