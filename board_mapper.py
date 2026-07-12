@@ -1,5 +1,6 @@
 from config import CELL_SIZE
 
+
 class BoardMapper:
     @staticmethod
     def pixel_to_coords(x, y):

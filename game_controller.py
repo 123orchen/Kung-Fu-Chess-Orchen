@@ -1,11 +1,15 @@
 from board_mapper import BoardMapper
+from game_engine import GameEngine
+from move_scheduler import MoveScheduler
 
 
 class GameController:
-    def __init__(self, board, engine, scheduler):
+    def __init__(self, board, engine=None, scheduler=None):
         self._board = board
-        self._engine = engine
-        self._scheduler = scheduler
+        # אם לא שלחו לנו (כמו בטסטים של האתר), ניצור בעצמנו
+        self._scheduler = scheduler if scheduler is not None else MoveScheduler()
+        self._engine = engine if engine is not None else GameEngine(self._board, self._scheduler)
+
         self._current_time = 0
         self._selected_piece = None
 
