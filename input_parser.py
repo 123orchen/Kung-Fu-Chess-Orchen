@@ -1,7 +1,15 @@
+from config import VALID_COLORS, VALID_PIECES
 from piece import Piece
 
 
 class InputParser:
+    @staticmethod
+    def is_valid_token(token):
+        if token == '.': return True
+        if len(token) < 2: return False
+        color, p_type = token[0], token[1]
+        return color in VALID_COLORS and p_type in VALID_PIECES
+
     @staticmethod
     def parse_board_from_list(board_data):
         grid = []

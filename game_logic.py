@@ -28,12 +28,12 @@ class GameLogic:
                 print("ERROR ROW_WIDTH_MISMATCH")
                 return  # עוצרים!
             for token in row:
-                if token != '.' and not Piece.is_valid_token(token):
+                if token != '.' and not InputParser.is_valid_token(token):
                     print("ERROR UNKNOWN_TOKEN")
                     return  # עוצרים!
 
-                # 3. אתחול
-                # במקום לשלוח board_lines, נשלח אותו כפי שהוא למתודה שתומכת ברשימות
+        # 3. אתחול
+        # במקום לשלוח board_lines, נשלח אותו כפי שהוא למתודה שתומכת ברשימות
         board = Board(InputParser.parse_board_from_list(board_lines))
         controller = GameController(board)
 

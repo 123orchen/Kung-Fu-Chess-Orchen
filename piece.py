@@ -1,4 +1,3 @@
-# piece.py
 from config import KNIGHT
 
 
@@ -12,6 +11,9 @@ class Piece:
 
     @property
     def type(self): return self._type
+
+    def __str__(self):
+        return f"{self._color}{self._type}"
 
     def is_jumping(self):
         return self._type == KNIGHT  # השתמשי בקבוע KNIGHT מה-config

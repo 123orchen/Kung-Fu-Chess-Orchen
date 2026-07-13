@@ -6,7 +6,6 @@ from move_scheduler import MoveScheduler
 class GameController:
     def __init__(self, board, engine=None, scheduler=None):
         self._board = board
-        # אם לא שלחו לנו (כמו בטסטים של האתר), ניצור בעצמנו
         self._scheduler = scheduler if scheduler is not None else MoveScheduler()
         self._engine = engine if engine is not None else GameEngine(self._board, self._scheduler)
 
