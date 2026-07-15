@@ -14,6 +14,7 @@ KING = 'K'
 VALID_COLORS = [WHITE_TURN, BLACK_TURN]
 VALID_PIECES = [KING, QUEEN, ROOK, BISHOP, KNIGHT, PAWN]
 
+PAWN_MOVE_TYPE = 'pawn'
 PIECE_RULES = {
     'P': {'move_type': 'pawn'},
     'R': {'move_type': 'slide', 'vectors': [(0,1), (0,-1), (1,0), (-1,0)]},

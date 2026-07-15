@@ -12,11 +12,11 @@ class Piece:
     @property
     def type(self): return self._type
 
+    def promote(self):
+        self._type = 'Q'  # החייל הופך למלכה
+
     def __str__(self):
         return f"{self._color}{self._type}"
 
     def is_jumping(self):
         return self._type == KNIGHT  # השתמשי בקבוע KNIGHT מה-config
-
-
-
