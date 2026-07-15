@@ -16,10 +16,10 @@ VALID_PIECES = [KING, QUEEN, ROOK, BISHOP, KNIGHT, PAWN]
 
 PAWN_MOVE_TYPE = 'pawn'
 PIECE_RULES = {
-    'P': {'move_type': 'pawn'},
-    'R': {'move_type': 'slide', 'vectors': [(0,1), (0,-1), (1,0), (-1,0)]},
-    'B': {'move_type': 'slide', 'vectors': [(1,1), (1,-1), (-1,1), (-1,-1)]},
-    'N': {'move_type': 'jump', 'vectors': [(1,2), (1,-2), (-1,2), (-1,-2), (2,1), (2,-1), (-2,1), (-2,-1)]},
-    'Q': {'move_type': 'slide', 'vectors': [(0,1), (0,-1), (1,0), (-1,0), (1,1), (1,-1), (-1,1), (-1,-1)]},
-    'K': {'move_type': 'step', 'vectors': [(0,1), (0,-1), (1,0), (-1,0), (1,1), (1,-1), (-1,1), (-1,-1)]}
+    PAWN: {'move_type': PAWN_MOVE_TYPE},
+    ROOK: {'move_type': 'slide', 'vectors': [(0,1), (0,-1), (1,0), (-1,0)]},
+    BISHOP: {'move_type': 'slide', 'vectors': [(1,1), (1,-1), (-1,1), (-1,-1)]},
+    KNIGHT: {'move_type': 'jump', 'vectors': [(1,2), (1,-2), (-1,2), (-1,-2), (2,1), (2,-1), (-2,1), (-2,-1)]},
+    QUEEN: {'move_type': 'slide', 'vectors': [(0,1), (0,-1), (1,0), (-1,0), (1,1), (1,-1), (-1,1), (-1,-1)]},
+    KING: {'move_type': 'step', 'vectors': [(0,1), (0,-1), (1,0), (-1,0), (1,1), (1,-1), (-1,1), (-1,-1)]}
 }

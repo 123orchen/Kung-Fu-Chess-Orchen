@@ -10,19 +10,25 @@ class MoveScheduler:
 
     def get_due_moves(self, current_time):
         due = [m for m in self._pending_moves if m.arrival_time <= current_time]
-
-        # יוצרים רשימה חדשה ללא המהלכים שמסרנו
         self._pending_moves = [m for m in self._pending_moves if m.arrival_time > current_time]
-
         return due
 
     def is_route_blocked(self, piece, to_r, to_c):
         for move in self._pending_moves:
-            # אם זה אותו כלי, אל תחסום את עצמך!
-            if move.piece == piece: continue
+            if move.piece == piece:
+                continue
 
             if move.to_r == to_r and move.to_c == to_c:
                 return True
+
+            if move.from_r == move.to_r and to_r == move.from_r:
+                if min(move.from_c, move.to_c) <= to_c <= max(move.from_c, move.to_c):
+                    return True
+
+            if move.from_c == move.to_c and to_c == move.from_c:
+                if min(move.from_r, move.to_r) <= to_r <= max(move.from_r, move.to_r):
+                    return True
+
         return False
 
     def is_square_occupied_by_pending_move(self, r, c):
