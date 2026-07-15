@@ -16,6 +16,10 @@ class GameController:
         self._selected_piece = None
         self._pending_visual_move = None
 
+    @property
+    def scheduler(self):
+        return self._scheduler
+
     def handle_wait(self, ms):
         self._current_time += ms
         self._time_ms = self._current_time

@@ -8,6 +8,12 @@ class MoveScheduler:
     def is_piece_moving(self, piece):
         return any(m.piece == piece for m in self._pending_moves)
 
+    def get_move_for_piece(self, piece):
+        for move in self._pending_moves:
+            if move.piece == piece:
+                return move
+        return None
+
     def get_due_moves(self, current_time):
         due = [m for m in self._pending_moves if m.arrival_time <= current_time]
         self._pending_moves = [m for m in self._pending_moves if m.arrival_time > current_time]

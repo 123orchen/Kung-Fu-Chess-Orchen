@@ -62,6 +62,9 @@ class Board:
         for row in self._grid:
             print(" ".join([str(p) if p else "." for p in row]))
 
+    def get_grid(self):
+        return self._grid
+
     def is_king_on_board(self, color):
         for piece in self._piece_locations:
             if piece.type == KING and piece.color == color:
