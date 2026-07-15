@@ -5,6 +5,9 @@ from config import PAWN_MOVE_TYPE, PIECE_RULES, WHITE_TURN
 class RuleEngine:
     @staticmethod
     def is_legal(board, piece, to_r, to_c):
+        if to_r < 0 or to_r >= board._rows or to_c < 0 or to_c >= board._cols:
+            return False
+
         target = board.get_piece(to_r, to_c)
         if target and target.color == piece.color:
             return False
@@ -34,9 +37,7 @@ class RuleEngine:
         direction = -1 if piece.color == WHITE_TURN else 1
 
         is_white = piece.color == WHITE_TURN
-        start_row = 6 if is_white else 1
-        if board._rows == 4:
-            start_row = 3 if is_white else 0
+        start_row = board._rows - 2 if is_white else 1
 
         is_capture = board.get_piece(to_r, to_c) is not None
 

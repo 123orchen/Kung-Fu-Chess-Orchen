@@ -15,6 +15,14 @@ VALID_COLORS = [WHITE_TURN, BLACK_TURN]
 VALID_PIECES = [KING, QUEEN, ROOK, BISHOP, KNIGHT, PAWN]
 
 PAWN_MOVE_TYPE = 'pawn'
+JUMP_DURATION_MS = 1000
+MOVE_DURATION_MS = 1000
+COMMAND_CLICK = 'click'
+COMMAND_JUMP = 'jump'
+COMMAND_WAIT = 'wait'
+COMMAND_PRINT = 'print'
+COMMAND_PRINT_BOARD = 'board'
+
 PIECE_RULES = {
     PAWN: {'move_type': PAWN_MOVE_TYPE},
     ROOK: {'move_type': 'slide', 'vectors': [(0,1), (0,-1), (1,0), (-1,0)]},

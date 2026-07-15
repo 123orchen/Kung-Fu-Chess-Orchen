@@ -15,7 +15,7 @@ class Board:
     def execute_move(self, from_r, from_c, to_r, to_c):
         piece = self._grid[from_r][from_c]
         if not piece:
-            return
+            return None
 
         target = self._grid[to_r][to_c]
         if target and target in self._piece_locations:
@@ -31,11 +31,32 @@ class Board:
             if to_r == last_row:
                 piece.promote()
 
+        return target
+
+    def snapshot_state(self):
+        return [row[:] for row in self._grid], dict(self._piece_locations)
+
+    def restore_state(self, state):
+        grid_snapshot, piece_locations_snapshot = state
+        self._grid = [row[:] for row in grid_snapshot]
+        self._piece_locations = dict(piece_locations_snapshot)
+
     def find_piece(self, piece):
         return self._piece_locations.get(piece)
 
     def get_piece(self, row, col):
         return self._grid[row][col] if 0 <= row < self._rows and 0 <= col < self._cols else None
+
+    def remove_piece(self, row, col):
+        piece = self.get_piece(row, col)
+        if not piece:
+            return None
+
+        if piece in self._piece_locations:
+            del self._piece_locations[piece]
+
+        self._grid[row][col] = None
+        return piece
 
     def display(self):
         for row in self._grid:

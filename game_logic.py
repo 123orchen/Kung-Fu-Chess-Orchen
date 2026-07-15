@@ -1,3 +1,4 @@
+from config import COMMAND_CLICK, COMMAND_JUMP, COMMAND_PRINT, COMMAND_PRINT_BOARD, COMMAND_WAIT
 from input_parser import InputParser
 from board import Board
 from game_controller import GameController
@@ -40,10 +41,13 @@ class GameLogic:
         # 4. ביצוע פקודות
         for cmd in commands:
             p = cmd.split()
-            if not p: continue
-            if p[0] == "click":
+            if not p:
+                continue
+            if p[0] == COMMAND_CLICK:
                 controller.handle_click(int(p[1]), int(p[2]))
-            elif p[0] == "wait":  # הוספנו את זה!
+            elif p[0] == COMMAND_JUMP:
+                controller.handle_jump(int(p[1]), int(p[2]))
+            elif p[0] == COMMAND_WAIT:
                 controller.handle_wait(int(p[1]))
-            elif p[0] == "print" and p[1] == "board":
+            elif p[0] == COMMAND_PRINT and p[1] == COMMAND_PRINT_BOARD:
                 board.display()
