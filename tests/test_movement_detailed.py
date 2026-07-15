@@ -1,5 +1,5 @@
 import pytest
-from piece import Piece
+from model.piece import Piece
 
 @pytest.mark.parametrize("type, from_r, from_c, to_r, to_c, expected", [
     ('K', 0, 0, 0, 1, True),  # מלך: צעד אחד חוקי

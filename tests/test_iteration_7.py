@@ -1,8 +1,8 @@
 import pytest
-from board import Board
-from game_engine import GameEngine
-from move_scheduler import MoveScheduler
-from piece import Piece
+from model.board import Board
+from game.game_engine import GameEngine
+from game.real_time_arbiter import MoveScheduler
+from model.piece import Piece
 from config import PAWN, ROOK, WHITE_TURN, BLACK_TURN
 
 

@@ -1,7 +1,7 @@
 import pytest
-from board import Board
-from piece import Piece
-from game_controller import GameController
+from model.board import Board
+from model.piece import Piece
+from game.controller import GameController
 
 
 def test_rook_blocked_by_own_piece():

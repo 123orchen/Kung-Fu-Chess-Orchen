@@ -1,4 +1,4 @@
-from game_logic import GameLogic
+from runner.game_logic import GameLogic
 
 
 def _run_vpl_input(input_data):

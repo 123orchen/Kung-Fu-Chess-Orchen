@@ -1,4 +1,4 @@
-from piece import Piece
+from model.piece import Piece
 
 def test_piece_creation():
     p = Piece('w', 'K')

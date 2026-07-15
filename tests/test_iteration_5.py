@@ -1,7 +1,7 @@
 import pytest
-from piece import Piece
-from board import Board
-from rule_engine import RuleEngine
+from model.piece import Piece
+from model.board import Board
+from rules.rule_engine import RuleEngine
 from config import PAWN, WHITE_TURN, BLACK_TURN
 
 

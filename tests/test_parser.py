@@ -1,4 +1,4 @@
-from input_parser import InputParser
+from runner.command_parser import InputParser
 
 
 def test_parser_valid_input():

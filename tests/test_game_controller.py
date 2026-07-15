@@ -1,7 +1,7 @@
 import pytest
-from board import Board
-from game_controller import GameController
-from piece import Piece
+from model.board import Board
+from game.controller import GameController
+from model.piece import Piece
 
 
 def test_click_selection():

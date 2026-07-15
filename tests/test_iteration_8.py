@@ -1,9 +1,9 @@
 import pytest
-from board import Board
-from piece import Piece
-from game_engine import GameEngine
-from move_scheduler import MoveScheduler
-from pathValidator import PathValidator
+from model.board import Board
+from model.piece import Piece
+from game.game_engine import GameEngine
+from game.real_time_arbiter import MoveScheduler
+from rules.movement_rules import PathValidator
 
 
 def test_no_premove():

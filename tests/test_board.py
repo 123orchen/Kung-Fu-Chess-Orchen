@@ -1,5 +1,5 @@
-from board import Board
-from piece import Piece
+from model.board import Board
+from model.piece import Piece
 
 
 def test_board_display(capsys):

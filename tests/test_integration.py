@@ -1,4 +1,4 @@
-from game_logic import GameLogic
+from runner.game_logic import GameLogic
 import io
 import sys
 

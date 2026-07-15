@@ -1,5 +1,5 @@
 import sys
-from game_logic import GameLogic
+from runner.game_logic import GameLogic
 
 URL = "https://github.com/123orchen/Kung-Fu-Chess-Orchen.git"
 
