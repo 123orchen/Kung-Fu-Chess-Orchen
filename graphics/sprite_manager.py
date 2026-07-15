@@ -4,12 +4,14 @@ import json
 from pathlib import Path
 from typing import Dict, List, Optional
 
-from py.img import Img
 from config import CELL_SIZE
+from graphics.py.img import Img
 
 
 class SpriteManager:
-    def __init__(self, asset_root: str | Path = "pieces1"):
+    def __init__(self, asset_root: str | Path | None = None):
+        if asset_root is None:
+            asset_root = Path(__file__).resolve().parent / "assets" / "pieces1"
         self.asset_root = Path(asset_root)
         self._state_cache: Dict[str, Dict[str, dict]] = {}
 

@@ -13,7 +13,8 @@ from model.board import Board
 from model.piece import Piece
 
 WINDOW_NAME = "ChessGame"
-BOARD_CSV = Path("pieces1") / "board.csv"
+GRAPHICS_ROOT = Path(__file__).resolve().parent
+BOARD_CSV = GRAPHICS_ROOT / "assets" / "pieces1" / "board.csv"
 
 
 def load_board_from_csv(csv_path: Path) -> Board:
@@ -37,9 +38,10 @@ def load_board_from_csv(csv_path: Path) -> Board:
 
 
 class GraphicsApp:
-    def __init__(self, asset_root: str | Path = "pieces1"):
+    def __init__(self, asset_root: str | Path | None = None):
         self.board = load_board_from_csv(BOARD_CSV)
         self.controller = GameController(self.board)
+        asset_root = asset_root or (GRAPHICS_ROOT / "assets" / "pieces1")
         self.renderer = Renderer(asset_root)
         self.click_events: List[tuple[str, int, int]] = []
         self.current_time_ms = 0

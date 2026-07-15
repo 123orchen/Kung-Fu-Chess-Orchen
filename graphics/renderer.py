@@ -1,14 +1,16 @@
 from __future__ import annotations
 
 import numpy as np
-from py.img import Img
 from config import CELL_SIZE
+from graphics.py.img import Img
 from graphics.sprite_manager import SpriteManager
 from model.board import Board
 
 
 class Renderer:
-    def __init__(self, asset_root: str = "pieces1"):
+    def __init__(self, asset_root: str | Path | None = None):
+        if asset_root is None:
+            asset_root = Path(__file__).resolve().parent / "assets" / "pieces1"
         self.sprite_manager = SpriteManager(asset_root)
         self.board_size = CELL_SIZE * 8
         self.light_color = (240, 217, 181)
