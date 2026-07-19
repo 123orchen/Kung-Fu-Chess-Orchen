@@ -66,6 +66,9 @@ class GameController:
             return
         if self._scheduler.is_piece_moving(self._selected_piece):
             return
+        # Prevent moves while on cooldown
+        if self._scheduler.is_piece_on_cooldown(self._selected_piece, self._current_time):
+            return
 
         from_r, from_c = self._board.find_piece(self._selected_piece)
         if from_r is None or from_c is None:

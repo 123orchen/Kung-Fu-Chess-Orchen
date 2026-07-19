@@ -53,31 +53,35 @@ class Img:
 
         return self
 
-    def draw_on(self, other_img, x, y):
-        if self.img is None or other_img.img is None:
-            raise ValueError("Both images must be loaded before drawing.")
-
-        if self.img.shape[2] != other_img.img.shape[2]:
-            if self.img.shape[2] == 3 and other_img.img.shape[2] == 4:
-                self.img = cv2.cvtColor(self.img, cv2.COLOR_BGR2BGRA)
-            elif self.img.shape[2] == 4 and other_img.img.shape[2] == 3:
-                self.img = cv2.cvtColor(self.img, cv2.COLOR_BGRA2BGR)
-
+    def draw_on(self, canvas: Img, x: int, y: int):
+        """Draws this image onto another canvas using alpha transparency"""
         h, w = self.img.shape[:2]
-        H, W = other_img.img.shape[:2]
+        canvas_h, canvas_w = canvas.img.shape[:2]
 
-        if y + h > H or x + w > W:
-            raise ValueError("Logo does not fit at the specified position.")
+        # חישוב גבולות כדי למנוע חריגה מהקנבס
+        x1, y1 = max(0, x), max(0, y)
+        x2, y2 = min(canvas_w, x + w), min(canvas_h, y + h)
+        
+        if x1 >= x2 or y1 >= y2:
+            return
 
-        roi = other_img.img[y:y + h, x:x + w]
+        # חיתוך חלק התמונה שמופיע בתוך גבולות המסך
+        s_x1, s_y1 = x1 - x, y1 - y
+        s_x2, s_y2 = s_x1 + (x2 - x1), s_y1 + (y2 - y1)
+        
+        target = canvas.img[y1:y2, x1:x2]
+        source = self.img[s_y1:s_y2, s_x1:s_x2]
 
-        if self.img.shape[2] == 4:
-            b, g, r, a = cv2.split(self.img)
-            mask = a / 255.0
-            for c in range(3):
-                roi[..., c] = (1 - mask) * roi[..., c] + mask * self.img[..., c]
+        # אם לתמונה יש 4 ערוצים (BGRA), נשתמש בשקיפות
+        if source.shape[2] == 4:
+            alpha = source[:, :, 3] / 255.0
+            alpha_inv = 1.0 - alpha
+            
+            for c in range(3): # B, G, R
+                target[:, :, c] = (alpha * source[:, :, c] + alpha_inv * target[:, :, c])
         else:
-            other_img.img[y:y + h, x:x + w] = self.img
+            # אם אין אלפא, פשוט נדביק (למקרים של תמונות בלי שקיפות)
+            target[:] = source[:, :, :3]
 
     def put_text(self, txt, x, y, font_size, color=(255, 255, 255, 255), thickness=1):
         if self.img is None:

@@ -1,12 +1,40 @@
 class MoveScheduler:
+    COOLDOWN_MS = 10000  # 10 seconds cooldown after moving
+    
     def __init__(self):
         self._pending_moves = []
+        self._piece_last_move_time = {}  # Track last move time for cooldown
 
     def schedule(self, move):
         self._pending_moves.append(move)
+        # Record when this piece is scheduled to move
+        self._piece_last_move_time[move.piece] = move.arrival_time
 
     def is_piece_moving(self, piece):
         return any(m.piece == piece for m in self._pending_moves)
+
+    def is_piece_on_cooldown(self, piece, current_time):
+        """Check if piece is still in cooldown period after moving"""
+        if piece not in self._piece_last_move_time:
+            return False
+        last_move_time = self._piece_last_move_time[piece]
+        return current_time - last_move_time < self.COOLDOWN_MS
+    
+    def get_cooldown_remaining_ms(self, piece, current_time):
+        """Get remaining cooldown time in milliseconds (0 if no cooldown)"""
+        if piece not in self._piece_last_move_time:
+            return 0
+        last_move_time = self._piece_last_move_time[piece]
+        elapsed = current_time - last_move_time
+        remaining = self.COOLDOWN_MS - elapsed
+        return max(0, remaining)
+    
+    def get_cooldown_alpha(self, piece, current_time):
+        """Get alpha value for cooldown overlay (0.0 to 1.0, 0=transparent)"""
+        remaining = self.get_cooldown_remaining_ms(piece, current_time)
+        if remaining <= 0:
+            return 0.0
+        return remaining / self.COOLDOWN_MS
 
     def get_move_for_piece(self, piece):
         for move in self._pending_moves:

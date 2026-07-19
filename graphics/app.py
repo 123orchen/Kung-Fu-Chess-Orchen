@@ -14,37 +14,44 @@ from model.piece import Piece
 
 WINDOW_NAME = "ChessGame"
 GRAPHICS_ROOT = Path(__file__).resolve().parent
-BOARD_CSV = GRAPHICS_ROOT / "assets" / "pieces1" / "board.csv"
-
-
-def load_board_from_csv(csv_path: Path) -> Board:
-    if not csv_path.exists():
-        raise FileNotFoundError(f"Board CSV not found: {csv_path}")
-
-    rows: List[List[Optional[Piece]]] = []
-    for raw_line in csv_path.read_text(encoding="utf-8").splitlines():
-        if not raw_line.strip():
-            continue
-        tokens = [token.strip() for token in raw_line.split(",")]
-        row: List[Optional[Piece]] = []
-        for token in tokens:
-            if token == "" or token == ".":
-                row.append(None)
-            else:
-                row.append(Piece(token[0], token[1]))
-        rows.append(row)
-
-    return Board(rows)
 
 
 class GraphicsApp:
     def __init__(self, asset_root: str | Path | None = None):
-        self.board = load_board_from_csv(BOARD_CSV)
+        self.board = self._create_default_board()
         self.controller = GameController(self.board)
-        asset_root = asset_root or (GRAPHICS_ROOT / "assets" / "pieces1")
+        asset_root = asset_root or (GRAPHICS_ROOT / "assets" / "pieces_mine")
         self.renderer = Renderer(asset_root)
         self.click_events: List[tuple[str, int, int]] = []
         self.current_time_ms = 0
+
+    def _create_default_board(self) -> Board:
+        """Create a standard chess starting position."""
+        grid: List[List[Optional[Piece]]] = []
+        
+        # Row 0: Black back rank
+        grid.append([
+            Piece('b', 'R'), Piece('b', 'N'), Piece('b', 'B'), Piece('b', 'Q'),
+            Piece('b', 'K'), Piece('b', 'B'), Piece('b', 'N'), Piece('b', 'R')
+        ])
+        
+        # Row 1: Black pawns
+        grid.append([Piece('b', 'P') for _ in range(8)])
+        
+        # Rows 2-5: Empty
+        for _ in range(4):
+            grid.append([None for _ in range(8)])
+        
+        # Row 6: White pawns
+        grid.append([Piece('w', 'P') for _ in range(8)])
+        
+        # Row 7: White back rank
+        grid.append([
+            Piece('w', 'R'), Piece('w', 'N'), Piece('w', 'B'), Piece('w', 'Q'),
+            Piece('w', 'K'), Piece('w', 'B'), Piece('w', 'N'), Piece('w', 'R')
+        ])
+        
+        return Board(grid)
 
     def run(self):
         cv2.namedWindow(WINDOW_NAME)
@@ -65,6 +72,7 @@ class GraphicsApp:
                 current_turn=None,
                 score_text=self._build_score_text(),
                 current_time_ms=self.current_time_ms,
+                game_engine=self.controller._engine,
             )
             cv2.imshow(WINDOW_NAME, image.img)
 

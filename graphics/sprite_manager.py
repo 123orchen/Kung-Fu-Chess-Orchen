@@ -11,7 +11,7 @@ from graphics.py.img import Img
 class SpriteManager:
     def __init__(self, asset_root: str | Path | None = None):
         if asset_root is None:
-            asset_root = Path(__file__).resolve().parent / "assets" / "pieces1"
+            asset_root = Path(__file__).resolve().parent / "assets" / "pieces_mine"
         self.asset_root = Path(asset_root)
         self._state_cache: Dict[str, Dict[str, dict]] = {}
 
