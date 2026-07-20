@@ -21,12 +21,16 @@ class SpriteManager:
             return None
         return Img().read(path, size=(CELL_SIZE, CELL_SIZE), keep_aspect=True)
 
-    def get_state(self, piece, scheduler) -> str:
+    def get_state(self, piece, scheduler, current_time_ms: int = 0) -> str:
         if scheduler is not None and scheduler.is_piece_moving(piece):
             move = scheduler.get_move_for_piece(piece)
             if move is not None and move.is_jump():
                 return "jump"
             return "move"
+        if scheduler is not None:
+            rest_kind = scheduler.get_rest_kind(piece, current_time_ms)
+            if rest_kind:
+                return rest_kind
         return "idle"
 
     def _get_frame_path(self, piece, state: str, current_time_ms: int) -> Optional[Path]:

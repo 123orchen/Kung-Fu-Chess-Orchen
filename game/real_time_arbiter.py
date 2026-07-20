@@ -1,40 +1,55 @@
+from config import LONG_REST_MS, SHORT_REST_MS, STATE_LONG_REST, STATE_SHORT_REST
+
+
 class MoveScheduler:
-    COOLDOWN_MS = 10000  # 10 seconds cooldown after moving
-    
     def __init__(self):
         self._pending_moves = []
-        self._piece_last_move_time = {}  # Track last move time for cooldown
+        self._rest_until = {}  # piece -> (rest_end_time_ms, rest_kind, rest_duration_ms)
 
     def schedule(self, move):
         self._pending_moves.append(move)
-        # Record when this piece is scheduled to move
-        self._piece_last_move_time[move.piece] = move.arrival_time
+        # A jump costs less rest than a standard move (per the game design doc).
+        duration = SHORT_REST_MS if move.is_jump() else LONG_REST_MS
+        kind = STATE_SHORT_REST if move.is_jump() else STATE_LONG_REST
+        self._rest_until[move.piece] = (move.arrival_time + duration, kind, duration)
 
     def is_piece_moving(self, piece):
         return any(m.piece == piece for m in self._pending_moves)
 
     def is_piece_on_cooldown(self, piece, current_time):
-        """Check if piece is still in cooldown period after moving"""
-        if piece not in self._piece_last_move_time:
+        """Check if piece is still resting (moving or post-move rest)."""
+        entry = self._rest_until.get(piece)
+        if entry is None:
             return False
-        last_move_time = self._piece_last_move_time[piece]
-        return current_time - last_move_time < self.COOLDOWN_MS
-    
+        end_time, _kind, _duration = entry
+        return current_time < end_time
+
+    def get_rest_kind(self, piece, current_time):
+        """Returns 'long_rest' / 'short_rest' while resting, else None - used to pick the right animation."""
+        entry = self._rest_until.get(piece)
+        if entry is None:
+            return None
+        end_time, kind, _duration = entry
+        return kind if current_time < end_time else None
+
     def get_cooldown_remaining_ms(self, piece, current_time):
         """Get remaining cooldown time in milliseconds (0 if no cooldown)"""
-        if piece not in self._piece_last_move_time:
+        entry = self._rest_until.get(piece)
+        if entry is None:
             return 0
-        last_move_time = self._piece_last_move_time[piece]
-        elapsed = current_time - last_move_time
-        remaining = self.COOLDOWN_MS - elapsed
-        return max(0, remaining)
-    
+        end_time, _kind, _duration = entry
+        return max(0, end_time - current_time)
+
     def get_cooldown_alpha(self, piece, current_time):
         """Get alpha value for cooldown overlay (0.0 to 1.0, 0=transparent)"""
-        remaining = self.get_cooldown_remaining_ms(piece, current_time)
-        if remaining <= 0:
+        entry = self._rest_until.get(piece)
+        if entry is None:
             return 0.0
-        return remaining / self.COOLDOWN_MS
+        _end_time, _kind, duration = entry
+        remaining = self.get_cooldown_remaining_ms(piece, current_time)
+        if remaining <= 0 or duration <= 0:
+            return 0.0
+        return remaining / duration
 
     def get_move_for_piece(self, piece):
         for move in self._pending_moves:

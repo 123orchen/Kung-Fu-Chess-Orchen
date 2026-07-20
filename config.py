@@ -23,6 +23,19 @@ COMMAND_WAIT = 'wait'
 COMMAND_PRINT = 'print'
 COMMAND_PRINT_BOARD = 'board'
 
+# --- Rest / cooldown (Kung Fu Chess time-based logic) ---
+# After a piece finishes a move it can't move again until its rest ends.
+# A jump ("defensive ability") costs less rest than a standard move.
+LONG_REST_MS = 10000   # rest after a standard move (kept as-is - existing tests depend on this value)
+SHORT_REST_MS = 3000   # rest after a jump-in-place - shorter, per the game design doc
+
+# Animation state names (must match the folder names under graphics/assets/pieces_mine/<piece>/states/)
+STATE_IDLE = 'idle'
+STATE_MOVE = 'move'
+STATE_JUMP = 'jump'
+STATE_LONG_REST = 'long_rest'
+STATE_SHORT_REST = 'short_rest'
+
 PIECE_RULES = {
     PAWN: {'move_type': PAWN_MOVE_TYPE},
     ROOK: {'move_type': 'slide', 'vectors': [(0,1), (0,-1), (1,0), (-1,0)]},

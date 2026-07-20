@@ -20,6 +20,11 @@ class GameController:
     def scheduler(self):
         return self._scheduler
 
+    def _is_available(self, piece):
+        """A piece can be selected/moved/jumped only if it isn't mid-move and isn't resting."""
+        return not self._scheduler.is_piece_moving(piece) and \
+            not self._scheduler.is_piece_on_cooldown(piece, self._current_time)
+
     def handle_wait(self, ms):
         self._current_time += ms
         self._time_ms = self._current_time
@@ -39,7 +44,7 @@ class GameController:
 
         if self._selected_piece is not None:
             if target and target.color == self._selected_piece.color:
-                if not self._scheduler.is_piece_moving(target):
+                if self._is_available(target):
                     self._selected_piece = target
                 return
 
@@ -47,7 +52,7 @@ class GameController:
             self._selected_piece = None
             return
 
-        if target and not self._scheduler.is_piece_moving(target):
+        if target and self._is_available(target):
             self._selected_piece = target
 
     def handle_jump(self, x, y):
@@ -56,7 +61,7 @@ class GameController:
 
         col, row = BoardMapper.pixel_to_coords(x, y)
         target = self._board.get_piece(row, col)
-        if not target:
+        if not target or not self._is_available(target):
             return
 
         self._engine.request_move(target, row, col, self._current_time + JUMP_DURATION_MS, move_type=Move.MOVE_TYPE_JUMP)
@@ -64,10 +69,7 @@ class GameController:
     def _attempt_move(self, row, col):
         if self._selected_piece is None:
             return
-        if self._scheduler.is_piece_moving(self._selected_piece):
-            return
-        # Prevent moves while on cooldown
-        if self._scheduler.is_piece_on_cooldown(self._selected_piece, self._current_time):
+        if not self._is_available(self._selected_piece):
             return
 
         from_r, from_c = self._board.find_piece(self._selected_piece)

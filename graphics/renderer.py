@@ -28,7 +28,7 @@ class Renderer:
                 if piece is None:
                     continue
 
-                state = self.sprite_manager.get_state(piece, scheduler)
+                state = self.sprite_manager.get_state(piece, scheduler, current_time_ms)
                 sprite = self.sprite_manager.get_sprite(piece, state, current_time_ms)
                 if sprite is None:
                     continue
