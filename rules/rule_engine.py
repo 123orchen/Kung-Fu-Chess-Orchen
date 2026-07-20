@@ -59,13 +59,25 @@ class RuleEngine:
         if dist == 0:
             return False
 
+        # Both components must divide evenly by dist, or this isn't actually
+        # a straight/diagonal line (e.g. dr=2,dc=1 is knight-shaped, not a
+        # rook/bishop move - plain integer division was silently accepting it).
+        if dr % dist != 0 or dc % dist != 0:
+            return False
+
         step_r = dr // dist
         step_c = dc // dist
 
         if (step_r, step_c) not in rule['vectors']:
             return False
 
-        if rule['move_type'] == 'step' and dist > 1:
+        # 'step' pieces (e.g. King) are implicitly capped at distance 1.
+        # Any move_type can also declare an explicit 'max_distance' (e.g. a
+        # Drone that reaches 2 squares) without needing a new move_type.
+        max_distance = rule.get('max_distance')
+        if max_distance is None and rule['move_type'] == 'step':
+            max_distance = 1
+        if max_distance is not None and dist > max_distance:
             return False
 
         return True
