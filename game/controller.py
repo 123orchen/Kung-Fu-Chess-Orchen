@@ -20,6 +20,10 @@ class GameController:
     def scheduler(self):
         return self._scheduler
 
+    @property
+    def engine(self):
+        return self._engine
+
     def _is_available(self, piece):
         """A piece can be selected/moved/jumped only if it isn't mid-move and isn't resting."""
         return not self._scheduler.is_piece_moving(piece) and \
@@ -64,7 +68,7 @@ class GameController:
         if not target or not self._is_available(target):
             return
 
-        self._engine.request_move(target, row, col, self._current_time + JUMP_DURATION_MS, move_type=Move.MOVE_TYPE_JUMP)
+        self._engine.request_move(target, row, col, self._current_time + JUMP_DURATION_MS, move_type=Move.MOVE_TYPE_JUMP, current_time=self._current_time)
 
     def _attempt_move(self, row, col):
         if self._selected_piece is None:
@@ -78,7 +82,7 @@ class GameController:
 
         arrival_time = self._current_time + self._get_move_duration(from_r, from_c, row, col)
 
-        if self._engine.request_move(self._selected_piece, row, col, arrival_time):
+        if self._engine.request_move(self._selected_piece, row, col, arrival_time, current_time=self._current_time):
             snapshot = self._board.snapshot_state()
             self._board.execute_move(from_r, from_c, row, col)
             self._pending_visual_move = {

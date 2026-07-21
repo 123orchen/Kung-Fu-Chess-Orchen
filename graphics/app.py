@@ -69,10 +69,8 @@ class GraphicsApp:
             image = self.renderer.render(
                 self.board,
                 scheduler=self.controller.scheduler,
-                current_turn=None,
-                score_text=self._build_score_text(),
                 current_time_ms=self.current_time_ms,
-                game_engine=self.controller._engine,
+                game_engine=self.controller.engine,
             )
             cv2.imshow(WINDOW_NAME, image.img)
 
@@ -93,23 +91,19 @@ class GraphicsApp:
                 self.controller.handle_jump(x, y)
 
     def _mouse_callback(self, event, x, y, flags, param):
-        if event == cv2.EVENT_LBUTTONDOWN:
-            self.click_events.append(("click", x, y))
-        elif event == cv2.EVENT_RBUTTONDOWN:
-            self.click_events.append(("jump", x, y))
+        # The board is drawn offset inside the window (side panels + header/
+        # footer take up the rest) - translate to board-relative coordinates
+        # here, once, so the controller/BoardMapper stay untouched and keep
+        # assuming a plain (0,0)-origin board like the text runner and tests do.
+        board_x = x - self.renderer.board_offset_x
+        board_y = y - self.renderer.board_offset_y
+        if not (0 <= board_x < self.renderer.board_size and 0 <= board_y < self.renderer.board_size):
+            return  # click landed in a panel/header/footer, not on the board
 
-    def _build_score_text(self) -> str:
-        white_count = 0
-        black_count = 0
-        for row in self.board.get_grid():
-            for piece in row:
-                if piece is None:
-                    continue
-                if piece.color == "w":
-                    white_count += 1
-                elif piece.color == "b":
-                    black_count += 1
-        return f"White: {white_count}  Black: {black_count}"
+        if event == cv2.EVENT_LBUTTONDOWN:
+            self.click_events.append(("click", board_x, board_y))
+        elif event == cv2.EVENT_RBUTTONDOWN:
+            self.click_events.append(("jump", board_x, board_y))
 
 
 def run():

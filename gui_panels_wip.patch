@@ -1,0 +1,820 @@
+diff --git a/config.py b/config.py
+index 9634601..e6df96d 100644
+--- a/config.py
++++ b/config.py
+@@ -22,6 +22,18 @@ COMMAND_JUMP = 'jump'
+ COMMAND_WAIT = 'wait'
+ COMMAND_PRINT = 'print'
+ COMMAND_PRINT_BOARD = 'board'
++COMMAND_PRINT_SCORE = 'score'
++COMMAND_PRINT_HISTORY = 'history'
++
++# Point value of each captured piece, used for the scoreboard.
++PIECE_VALUES = {
++    PAWN: 1,
++    KNIGHT: 3,
++    BISHOP: 3,
++    ROOK: 5,
++    QUEEN: 9,
++    KING: 0,  # capturing the King ends the game - no score needed for it
++}
+ 
+ # --- Rest / cooldown (Kung Fu Chess time-based logic) ---
+ # After a piece finishes a move it can't move again until its rest ends.
+@@ -36,6 +48,13 @@ STATE_JUMP = 'jump'
+ STATE_LONG_REST = 'long_rest'
+ STATE_SHORT_REST = 'short_rest'
+ 
++# --- GUI layout (side move-log panels + name/score header/footer) ---
++LEFT_PANEL_WIDTH = 220
++RIGHT_PANEL_WIDTH = 220
++TOP_MARGIN = 90
++BOTTOM_MARGIN = 90
++PANEL_ROW_HEIGHT = 22
++
+ PIECE_RULES = {
+     PAWN: {'move_type': PAWN_MOVE_TYPE},
+     ROOK: {'move_type': 'slide', 'vectors': [(0,1), (0,-1), (1,0), (-1,0)]},
+diff --git a/game/controller.py b/game/controller.py
+index 58f4802..398269b 100644
+--- a/game/controller.py
++++ b/game/controller.py
+@@ -20,6 +20,10 @@ class GameController:
+     def scheduler(self):
+         return self._scheduler
+ 
++    @property
++    def engine(self):
++        return self._engine
++
+     def _is_available(self, piece):
+         """A piece can be selected/moved/jumped only if it isn't mid-move and isn't resting."""
+         return not self._scheduler.is_piece_moving(piece) and \
+@@ -64,7 +68,7 @@ class GameController:
+         if not target or not self._is_available(target):
+             return
+ 
+-        self._engine.request_move(target, row, col, self._current_time + JUMP_DURATION_MS, move_type=Move.MOVE_TYPE_JUMP)
++        self._engine.request_move(target, row, col, self._current_time + JUMP_DURATION_MS, move_type=Move.MOVE_TYPE_JUMP, current_time=self._current_time)
+ 
+     def _attempt_move(self, row, col):
+         if self._selected_piece is None:
+@@ -78,7 +82,7 @@ class GameController:
+ 
+         arrival_time = self._current_time + self._get_move_duration(from_r, from_c, row, col)
+ 
+-        if self._engine.request_move(self._selected_piece, row, col, arrival_time):
++        if self._engine.request_move(self._selected_piece, row, col, arrival_time, current_time=self._current_time):
+             snapshot = self._board.snapshot_state()
+             self._board.execute_move(from_r, from_c, row, col)
+             self._pending_visual_move = {
+diff --git a/game/game_engine.py b/game/game_engine.py
+index 3d615aa..6cf1f65 100644
+--- a/game/game_engine.py
++++ b/game/game_engine.py
+@@ -1,5 +1,6 @@
+-from config import BLACK_TURN, WHITE_TURN
++from config import BLACK_TURN, PIECE_VALUES, WHITE_TURN
+ from .move import Move
++from .move_history import MoveHistory
+ from rules.movement_rules import PathValidator
+ from rules.rule_engine import RuleEngine
+ 
+@@ -9,10 +10,25 @@ class GameEngine:
+         self._board = board
+         self._scheduler = scheduler
+         self._game_over = False
++        self._move_history = MoveHistory()
++        self._score = {WHITE_TURN: 0, BLACK_TURN: 0}
+ 
+     def is_game_over(self):
+         return self._game_over
+ 
++    @property
++    def move_history(self):
++        return self._move_history
++
++    def get_score(self):
++        return dict(self._score)
++
++    def get_score_text(self):
++        return f"White: {self._score[WHITE_TURN]}  Black: {self._score[BLACK_TURN]}"
++
++    def _award_capture(self, winner_color, captured_type):
++        self._score[winner_color] += PIECE_VALUES.get(captured_type, 0)
++
+     def process_time_step(self, current_time):
+         active_airborne = self._scheduler.get_active_airborne_positions(current_time)
+ 
+@@ -28,14 +44,19 @@ class GameEngine:
+ 
+             airborne_piece = active_airborne.get((m.to_r, m.to_c))
+             if airborne_piece and airborne_piece.color != m.piece.color:
++                # Counter-capture: the defender was mid-jump, so the attacker
++                # is destroyed instead - the defender's side scores the point.
+                 self._board.remove_piece(m.from_r, m.from_c)
++                self._award_capture(airborne_piece.color, m.piece.type)
+                 continue
+ 
+             captured_piece = self._board.execute_move(m.from_r, m.from_c, m.to_r, m.to_c)
+-            if captured_piece and captured_piece.type == 'K':
+-                self._game_over = True
++            if captured_piece:
++                self._award_capture(m.piece.color, captured_piece.type)
++                if captured_piece.type == 'K':
++                    self._game_over = True
+ 
+-    def request_move(self, piece, to_r, to_c, arrival_time, move_type=Move.MOVE_TYPE_NORMAL):
++    def request_move(self, piece, to_r, to_c, arrival_time, move_type=Move.MOVE_TYPE_NORMAL, current_time=None):
+         if self._game_over or self._scheduler.is_piece_moving(piece):
+             return False
+ 
+@@ -43,12 +64,19 @@ class GameEngine:
+         if r is None or c is None:
+             return False
+ 
++        # The elapsed-time shown in the move log is when the command was
++        # received, not when the move lands - callers that track a real
++        # clock (GameController) should pass it; direct/test callers fall
++        # back to arrival_time (cosmetic only, doesn't affect gameplay).
++        received_time = current_time if current_time is not None else arrival_time
++
+         if move_type == Move.MOVE_TYPE_JUMP:
+             if r != to_r or c != to_c:
+                 return False
+ 
+             move = Move(piece, r, c, to_r, to_c, arrival_time, move_type=Move.MOVE_TYPE_JUMP)
+             self._scheduler.schedule(move)
++            self._move_history.record(piece.color, piece.type, r, c, to_r, to_c, move_type, received_time)
+             return True
+ 
+         if not RuleEngine.is_legal(self._board, piece, to_r, to_c):
+@@ -62,4 +90,5 @@ class GameEngine:
+ 
+         move = Move(piece, r, c, to_r, to_c, arrival_time)
+         self._scheduler.schedule(move)
++        self._move_history.record(piece.color, piece.type, r, c, to_r, to_c, move_type, received_time)
+         return True
+diff --git a/game/move_history.py b/game/move_history.py
+new file mode 100644
+index 0000000..b6518a3
+--- /dev/null
++++ b/game/move_history.py
+@@ -0,0 +1,72 @@
++import time
++
++_FILES = 'abcdefgh'
++
++
++class MoveHistoryEntry:
++    """A single logged command. received_at is a real (wall-clock) server-side
++    timestamp - independent of the simulated in-game clock used for move/rest
++    timing - so it reflects when the command actually arrived.
++
++    game_time_ms is the in-game clock value *at the moment the command was
++    received* (not when the move lands) - used for the elapsed-time column
++    shown in the GUI move log."""
++
++    def __init__(self, color, piece_type, from_r, from_c, to_r, to_c, move_type, game_time_ms):
++        self.color = color
++        self.piece_type = piece_type
++        self.from_r, self.from_c = from_r, from_c
++        self.to_r, self.to_c = to_r, to_c
++        self.move_type = move_type
++        self.game_time_ms = game_time_ms
++        self.received_at = time.time()
++
++    @staticmethod
++    def _square_name(r, c):
++        return f"{_FILES[c]}{8 - r}"
++
++    @property
++    def notation(self):
++        """Simplified algebraic-style notation: destination square, prefixed
++        with the piece letter for non-pawns. Real-time play means a move's
++        eventual capture outcome isn't known when the command is received,
++        so (unlike standard chess notation) no 'x'/'+' markers are added.
++        Jumps are marked with a trailing '^'."""
++        dest = self._square_name(self.to_r, self.to_c)
++        prefix = '' if self.piece_type == 'P' else self.piece_type
++        suffix = '^' if self.move_type == 'jump' else ''
++        return f"{prefix}{dest}{suffix}"
++
++    @property
++    def elapsed_label(self):
++        """mm:ss.mmm since the game started, based on the in-game clock."""
++        total_ms = max(0, self.game_time_ms)
++        minutes = total_ms // 60000
++        seconds = (total_ms % 60000) / 1000.0
++        return f"{minutes:02d}:{seconds:06.3f}"
++
++    def __str__(self):
++        return (f"[{self.received_at:.3f}] {self.color}{self.piece_type} "
++                f"{self.move_type} ({self.from_r},{self.from_c})->({self.to_r},{self.to_c})")
++
++
++class MoveHistory:
++    """Chronological log of every move command received, interleaved across
++    both players (real-time play means there's no single "turn order")."""
++
++    def __init__(self):
++        self._entries = []
++
++    def record(self, color, piece_type, from_r, from_c, to_r, to_c, move_type, game_time_ms):
++        entry = MoveHistoryEntry(color, piece_type, from_r, from_c, to_r, to_c, move_type, game_time_ms)
++        self._entries.append(entry)
++        return entry
++
++    def all(self):
++        return list(self._entries)
++
++    def for_color(self, color):
++        return [e for e in self._entries if e.color == color]
++
++    def __len__(self):
++        return len(self._entries)
+diff --git a/graphics/app.py b/graphics/app.py
+index 58fa1fb..5901320 100644
+--- a/graphics/app.py
++++ b/graphics/app.py
+@@ -69,10 +69,8 @@ class GraphicsApp:
+             image = self.renderer.render(
+                 self.board,
+                 scheduler=self.controller.scheduler,
+-                current_turn=None,
+-                score_text=self._build_score_text(),
+                 current_time_ms=self.current_time_ms,
+-                game_engine=self.controller._engine,
++                game_engine=self.controller.engine,
+             )
+             cv2.imshow(WINDOW_NAME, image.img)
+ 
+@@ -93,23 +91,19 @@ class GraphicsApp:
+                 self.controller.handle_jump(x, y)
+ 
+     def _mouse_callback(self, event, x, y, flags, param):
++        # The board is drawn offset inside the window (side panels + header/
++        # footer take up the rest) - translate to board-relative coordinates
++        # here, once, so the controller/BoardMapper stay untouched and keep
++        # assuming a plain (0,0)-origin board like the text runner and tests do.
++        board_x = x - self.renderer.board_offset_x
++        board_y = y - self.renderer.board_offset_y
++        if not (0 <= board_x < self.renderer.board_size and 0 <= board_y < self.renderer.board_size):
++            return  # click landed in a panel/header/footer, not on the board
++
+         if event == cv2.EVENT_LBUTTONDOWN:
+-            self.click_events.append(("click", x, y))
++            self.click_events.append(("click", board_x, board_y))
+         elif event == cv2.EVENT_RBUTTONDOWN:
+-            self.click_events.append(("jump", x, y))
+-
+-    def _build_score_text(self) -> str:
+-        white_count = 0
+-        black_count = 0
+-        for row in self.board.get_grid():
+-            for piece in row:
+-                if piece is None:
+-                    continue
+-                if piece.color == "w":
+-                    white_count += 1
+-                elif piece.color == "b":
+-                    black_count += 1
+-        return f"White: {white_count}  Black: {black_count}"
++            self.click_events.append(("jump", board_x, board_y))
+ 
+ 
+ def run():
+diff --git a/graphics/renderer.py b/graphics/renderer.py
+index 85933a5..1410771 100644
+--- a/graphics/renderer.py
++++ b/graphics/renderer.py
+@@ -3,7 +3,10 @@ from __future__ import annotations
+ import numpy as np
+ import cv2
+ from pathlib import Path
+-from config import CELL_SIZE
++from config import (
++    BOTTOM_MARGIN, CELL_SIZE, LEFT_PANEL_WIDTH, PANEL_ROW_HEIGHT,
++    RIGHT_PANEL_WIDTH, TOP_MARGIN,
++)
+ from graphics.py.img import Img
+ from graphics.sprite_manager import SpriteManager
+ from model.board import Board
+@@ -17,12 +20,45 @@ class Renderer:
+         self.board_size = CELL_SIZE * 8
+         self.light_color = (240, 217, 181)
+         self.dark_color = (181, 136, 99)
++        self.panel_bg_color = (60, 60, 60)
++        # Where the 8x8 board sits inside the full canvas (panels/header/footer
++        # take up the rest). Mouse clicks must be translated by this same
++        # offset before reaching the controller - see GraphicsApp._mouse_callback.
++        self.board_offset_x = LEFT_PANEL_WIDTH
++        self.board_offset_y = TOP_MARGIN
++        self.canvas_width = LEFT_PANEL_WIDTH + self.board_size + RIGHT_PANEL_WIDTH
++        self.canvas_height = TOP_MARGIN + self.board_size + BOTTOM_MARGIN
+ 
+-    def render(self, board: Board, scheduler=None, current_turn: str | None = None,
+-               score_text: str | None = None, current_time_ms: int = 0, game_engine=None) -> Img:
+-        canvas = self._create_board_canvas()
++    def render(self, board: Board, scheduler=None, current_time_ms: int = 0,
++               game_engine=None, black_name: str = "Black Player",
++               white_name: str = "White Player") -> Img:
++        canvas = self._create_full_canvas()
+ 
+-        # Draw pieces with their sprites
++        self._draw_board_squares(canvas)
++        self._draw_pieces(canvas, board, scheduler, current_time_ms)
++
++        score = game_engine.get_score() if game_engine is not None else {'w': 0, 'b': 0}
++        move_history = game_engine.move_history if game_engine is not None else None
++
++        self._draw_header_footer(canvas, black_name, white_name, score)
++        self._draw_side_panel(canvas, move_history, color='b', x0=0, header="Black")
++        self._draw_side_panel(canvas, move_history, color='w',
++                               x0=self.board_offset_x + self.board_size, header="White")
++
++        if game_engine is not None and game_engine.is_game_over():
++            self._draw_game_over_screen(canvas, board)
++
++        return canvas
++
++    def _draw_board_squares(self, canvas: Img):
++        for row_idx in range(8):
++            for col_idx in range(8):
++                color = self.light_color if (row_idx + col_idx) % 2 == 0 else self.dark_color
++                y0 = self.board_offset_y + row_idx * CELL_SIZE
++                x0 = self.board_offset_x + col_idx * CELL_SIZE
++                canvas.img[y0:y0 + CELL_SIZE, x0:x0 + CELL_SIZE] = color
++
++    def _draw_pieces(self, canvas: Img, board: Board, scheduler, current_time_ms: int):
+         for row_idx, row in enumerate(board.get_grid()):
+             for col_idx, piece in enumerate(row):
+                 if piece is None:
+@@ -33,96 +69,94 @@ class Renderer:
+                 if sprite is None:
+                     continue
+ 
+-                sprite.draw_on(canvas, col_idx * CELL_SIZE, row_idx * CELL_SIZE)
+-                
+-                # Draw cooldown overlay if piece is on cooldown
+-                if scheduler is not None:
+-                    self._draw_cooldown_overlay(canvas, col_idx, row_idx, piece, scheduler, current_time_ms)
+-
+-        if current_turn is not None:
+-            canvas.put_text(f"Turn: {current_turn}", 10, 30, 1.0, color=(0, 0, 0), thickness=2)
+-        if score_text:
+-            canvas.put_text(score_text, 10, 60, 1.0, color=(0, 0, 0), thickness=2)
+-
+-        # Draw game over screen if game is over
+-        if game_engine is not None and game_engine.is_game_over():
+-            self._draw_game_over_screen(canvas, board)
++                x = self.board_offset_x + col_idx * CELL_SIZE
++                y = self.board_offset_y + row_idx * CELL_SIZE
++                sprite.draw_on(canvas, x, y)
+ 
+-        return canvas
++                if scheduler is not None:
++                    self._draw_cooldown_overlay(canvas, x, y, piece, scheduler, current_time_ms)
+ 
+-    def _draw_cooldown_overlay(self, canvas, col_idx, row_idx, piece, scheduler, current_time_ms):
++    def _draw_cooldown_overlay(self, canvas, x, y, piece, scheduler, current_time_ms):
+         """Draw a fading yellow overlay for pieces on cooldown"""
+         alpha = scheduler.get_cooldown_alpha(piece, current_time_ms)
+         if alpha <= 0:
+             return
+-        
+-        x = col_idx * CELL_SIZE
+-        y = row_idx * CELL_SIZE
+-        
+-        # Create semi-transparent yellow overlay
++
+         overlay_img = Img()
+         overlay_img.img = np.zeros((CELL_SIZE, CELL_SIZE, 4), dtype=np.uint8)
+-        
+-        # חישוב ערך הצבע עם הגבלה ל-255 כדי למנוע Overflow
++
+         color_val = int(max(0, min(255, 255 * alpha)))
+-        
+-        # BGRA format: Blue, Green, Red, Alpha
+-        overlay_img.img[:, :, 0] = 0           # B
+-        overlay_img.img[:, :, 1] = color_val   # G (yellow)
+-        overlay_img.img[:, :, 2] = color_val   # R (yellow)
+-        overlay_img.img[:, :, 3] = int(max(0, min(255, 100 * alpha))) # A (transparency)
+-        
+-        # Draw overlay on canvas
++
++        overlay_img.img[:, :, 0] = 0
++        overlay_img.img[:, :, 1] = color_val
++        overlay_img.img[:, :, 2] = color_val
++        overlay_img.img[:, :, 3] = int(max(0, min(255, 100 * alpha)))
++
+         overlay_img.draw_on(canvas, x, y)
+ 
++    def _draw_header_footer(self, canvas: Img, black_name, white_name, score):
++        center_x = self.canvas_width // 2
++
++        canvas.put_text(f"Name: {black_name}", center_x - 140, 30, 0.8, color=(255, 255, 255), thickness=2)
++        canvas.put_text(f"Score: {score.get('b', 0)}", center_x - 60, 60, 0.7, color=(255, 255, 255), thickness=1)
++
++        footer_y = self.board_offset_y + self.board_size
++        canvas.put_text(f"Score: {score.get('w', 0)}", center_x - 60, footer_y + 30, 0.7, color=(255, 255, 255), thickness=1)
++        canvas.put_text(f"Name: {white_name}", center_x - 140, footer_y + 60, 0.8, color=(255, 255, 255), thickness=2)
++
++    def _draw_side_panel(self, canvas: Img, move_history, color, x0, header):
++        panel_width = LEFT_PANEL_WIDTH if x0 == 0 else RIGHT_PANEL_WIDTH
++        y0 = self.board_offset_y
++        canvas.img[y0:y0 + self.board_size, x0:x0 + panel_width] = self.panel_bg_color
++
++        canvas.put_text(header, x0 + panel_width // 2 - 20, y0 + 20, 0.6, color=(255, 255, 255), thickness=2)
++        canvas.put_text("Time", x0 + 10, y0 + 45, 0.45, color=(200, 200, 200), thickness=1)
++        canvas.put_text("Move", x0 + 100, y0 + 45, 0.45, color=(200, 200, 200), thickness=1)
++
++        if move_history is None:
++            return
++
++        entries = move_history.for_color(color)
++        rows_available = max(0, (self.board_size - 70) // PANEL_ROW_HEIGHT)
++        visible = entries[-rows_available:] if rows_available else []
++
++        row_y = y0 + 70
++        for entry in visible:
++            canvas.put_text(entry.elapsed_label, x0 + 10, row_y, 0.42, color=(230, 230, 230), thickness=1)
++            canvas.put_text(entry.notation, x0 + 100, row_y, 0.42, color=(230, 230, 230), thickness=1)
++            row_y += PANEL_ROW_HEIGHT
++
+     def _draw_game_over_screen(self, canvas, board):
+         """Draw game over screen with winner information"""
+-        # Create semi-transparent dark overlay
+-        overlay = np.zeros((self.board_size, self.board_size, 3), dtype=np.uint8)
++        overlay = np.zeros((self.canvas_height, self.canvas_width, 3), dtype=np.uint8)
+         canvas.img = cv2.addWeighted(canvas.img, 0.3, overlay, 0.7, 0)
+-        
+-        # Determine winner
++
+         white_king_alive = board.is_king_on_board('w')
+         black_king_alive = board.is_king_on_board('b')
+-        
++
+         if white_king_alive and not black_king_alive:
+-            winner_text = "🏆 WHITE WINS! 🏆"
++            winner_text = "WHITE WINS!"
+             title_text = "GAME OVER"
+         elif black_king_alive and not white_king_alive:
+-            winner_text = "🏆 BLACK WINS! 🏆"
++            winner_text = "BLACK WINS!"
+             title_text = "GAME OVER"
+         else:
+             winner_text = "DRAW"
+             title_text = "GAME OVER"
+-        
+-        # Draw title
+-        text_y = self.board_size // 2 - 60
+-        canvas.put_text(title_text, 
+-                       self.board_size // 2 - 100, text_y,
+-                       2.5, color=(255, 255, 255), thickness=4)
+-        
+-        # Draw winner
++
++        center_x = self.canvas_width // 2
++        center_y = self.canvas_height // 2
++
++        text_y = center_y - 60
++        canvas.put_text(title_text, center_x - 100, text_y, 2.5, color=(255, 255, 255), thickness=4)
++
+         text_y += 100
+-        canvas.put_text(winner_text,
+-                       self.board_size // 2 - 150, text_y,
+-                       2.0, color=(0, 255, 255), thickness=3)
+-        
+-        # Draw instructions
++        canvas.put_text(winner_text, center_x - 150, text_y, 2.0, color=(0, 255, 255), thickness=3)
++
+         text_y += 80
+-        canvas.put_text("Press Q or ESC to exit",
+-                       self.board_size // 2 - 120, text_y,
+-                       1.0, color=(255, 255, 255), thickness=2)
++        canvas.put_text("Press Q or ESC to exit", center_x - 120, text_y, 1.0, color=(255, 255, 255), thickness=2)
+ 
+-    def _create_board_canvas(self) -> Img:
++    def _create_full_canvas(self) -> Img:
+         canvas = Img()
+-        board_pixels = self.board_size
+-        canvas.img = np.zeros((board_pixels, board_pixels, 3), dtype=np.uint8)
+-
+-        for row_idx in range(8):
+-            for col_idx in range(8):
+-                color = self.light_color if (row_idx + col_idx) % 2 == 0 else self.dark_color
+-                y0 = row_idx * CELL_SIZE
+-                x0 = col_idx * CELL_SIZE
+-                canvas.img[y0:y0 + CELL_SIZE, x0:x0 + CELL_SIZE] = color
+-
++        canvas.img = np.zeros((self.canvas_height, self.canvas_width, 3), dtype=np.uint8)
+         return canvas
+diff --git a/remaining.patch b/remaining.patch
+deleted file mode 100644
+index 31140a2..0000000
+--- a/remaining.patch
++++ /dev/null
+@@ -1,183 +0,0 @@
+-diff --git a/model/piece.py b/model/piece.py
+-index d7db75e..8b5b4cd 100644
+---- a/model/piece.py
+-+++ b/model/piece.py
+-@@ -1,4 +1,4 @@
+--from config import KNIGHT, PAWN, PAWN_MOVE_TYPE, PIECE_RULES, QUEEN, VALID_COLORS, VALID_PIECES, WHITE_TURN
+-+from config import KNIGHT, QUEEN, VALID_COLORS, VALID_PIECES
+- 
+- 
+- class Piece:
+-@@ -29,41 +29,3 @@ class Piece:
+-             return False
+-         color, p_type = token[0], token[1]
+-         return color in VALID_COLORS and p_type in VALID_PIECES
+--
+--    def is_valid_move(self, from_r, from_c, to_r, to_c):
+--        if from_r == to_r and from_c == to_c:
+--            return False
+--
+--        dr, dc = to_r - from_r, to_c - from_c
+--        rule = PIECE_RULES.get(self._type)
+--        if not rule:
+--            return False
+--
+--        move_type = rule['move_type']
+--        if move_type == PAWN_MOVE_TYPE:
+--            direction = -1 if self._color == WHITE_TURN else 1
+--            if dr == direction and abs(dc) == 1:
+--                return True
+--            if dr == direction and dc == 0:
+--                return True
+--            if from_r == (6 if self._color == WHITE_TURN else 1) and dr == 2 * direction and dc == 0:
+--                return True
+--            return False
+--
+--        if move_type in ['slide', 'step']:
+--            dist = max(abs(dr), abs(dc))
+--            if dist == 0:
+--                return False
+--
+--            step_r = dr // dist
+--            step_c = dc // dist
+--            if (step_r, step_c) not in rule['vectors']:
+--                return False
+--            if move_type == 'step' and dist > 1:
+--                return False
+--            return True
+--
+--        if move_type == 'jump':
+--            return (dr, dc) in rule['vectors']
+--
+--        return False
+-diff --git a/rules/rule_engine.py b/rules/rule_engine.py
+-index 4449cb1..4804c23 100644
+---- a/rules/rule_engine.py
+-+++ b/rules/rule_engine.py
+-@@ -59,13 +59,25 @@ class RuleEngine:
+-         if dist == 0:
+-             return False
+- 
+-+        # Both components must divide evenly by dist, or this isn't actually
+-+        # a straight/diagonal line (e.g. dr=2,dc=1 is knight-shaped, not a
+-+        # rook/bishop move - plain integer division was silently accepting it).
+-+        if dr % dist != 0 or dc % dist != 0:
+-+            return False
+-+
+-         step_r = dr // dist
+-         step_c = dc // dist
+- 
+-         if (step_r, step_c) not in rule['vectors']:
+-             return False
+- 
+--        if rule['move_type'] == 'step' and dist > 1:
+-+        # 'step' pieces (e.g. King) are implicitly capped at distance 1.
+-+        # Any move_type can also declare an explicit 'max_distance' (e.g. a
+-+        # Drone that reaches 2 squares) without needing a new move_type.
+-+        max_distance = rule.get('max_distance')
+-+        if max_distance is None and rule['move_type'] == 'step':
+-+            max_distance = 1
+-+        if max_distance is not None and dist > max_distance:
+-             return False
+- 
+-         return True
+-diff --git a/tests/test_extensibility.py b/tests/test_extensibility.py
+-new file mode 100644
+-index 0000000..62aaac2
+---- /dev/null
+-+++ b/tests/test_extensibility.py
+-@@ -0,0 +1,65 @@
+-+"""
+-+Proves the movement engine is genuinely extensible: a brand-new piece type
+-+(e.g. a "Drone" that moves up to 2 squares in any direction, as mentioned in
+-+the game design doc) can be added with a single PIECE_RULES entry, with zero
+-+changes to rule_engine.py or movement_rules.py, thanks to the generic
+-+'max_distance' support added there.
+-+
+-+This test does NOT add a real piece to the game - it registers a temporary
+-+custom piece type only for the duration of the test (via monkeypatch), to
+-+demonstrate the mechanism without shipping a new piece nobody asked for.
+-+"""
+-+import pytest
+-+import config
+-+from model.board import Board
+-+from model.piece import Piece
+-+from rules.rule_engine import RuleEngine
+-+from rules.movement_rules import PathValidator
+-+
+-+CUSTOM_TYPE = 'X'
+-+CUSTOM_RULE = {
+-+    'move_type': 'slide',
+-+    'vectors': [(0, 1), (0, -1), (1, 0), (-1, 0), (1, 1), (1, -1), (-1, 1), (-1, -1)],
+-+    'max_distance': 2,
+-+}
+-+
+-+
+-+@pytest.fixture
+-+def custom_piece_type(monkeypatch):
+-+    monkeypatch.setitem(config.PIECE_RULES, CUSTOM_TYPE, CUSTOM_RULE)
+-+
+-+
+-+def make_board(pieces):
+-+    grid = [[None for _ in range(8)] for _ in range(8)]
+-+    for (r, c), piece in pieces.items():
+-+        grid[r][c] = piece
+-+    return Board(grid)
+-+
+-+
+-+def test_new_piece_type_can_move_within_its_declared_range(custom_piece_type):
+-+    piece = Piece('w', CUSTOM_TYPE)
+-+    board = make_board({(4, 4): piece})
+-+    assert RuleEngine.is_legal(board, piece, 4, 6) is True   # 2 squares right
+-+    assert RuleEngine.is_legal(board, piece, 2, 4) is True   # 2 squares up
+-+    assert RuleEngine.is_legal(board, piece, 2, 2) is True   # 2 squares diagonal
+-+
+-+
+-+def test_new_piece_type_cannot_exceed_its_declared_range(custom_piece_type):
+-+    piece = Piece('w', CUSTOM_TYPE)
+-+    board = make_board({(4, 4): piece})
+-+    assert RuleEngine.is_legal(board, piece, 4, 7) is False  # 3 squares - too far
+-+    assert RuleEngine.is_legal(board, piece, 6, 5) is False  # not a straight/diagonal line
+-+
+-+
+-+def test_new_piece_type_path_is_still_blocked_correctly(custom_piece_type):
+-+    piece = Piece('w', CUSTOM_TYPE)
+-+    blocker = Piece('w', CUSTOM_TYPE)
+-+    board = make_board({(4, 4): piece, (4, 5): blocker})
+-+    assert PathValidator.is_path_clear(board, None, 4, 4, 4, 6) is False
+-+
+-+
+-+def test_custom_piece_type_does_not_leak_into_real_game():
+-+    # No fixture used here - proves the demo type from the tests above
+-+    # never actually gets registered in the real, shipped PIECE_RULES.
+-+    assert CUSTOM_TYPE not in config.PIECE_RULES
+-+    assert CUSTOM_TYPE not in config.VALID_PIECES
+-diff --git a/tests/test_movement_detailed.py b/tests/test_movement_detailed.py
+-index aebddb8..28a827b 100644
+---- a/tests/test_movement_detailed.py
+-+++ b/tests/test_movement_detailed.py
+-@@ -1,5 +1,15 @@
+- import pytest
+-+from model.board import Board
+- from model.piece import Piece
+-+from rules.rule_engine import RuleEngine
+-+
+-+
+-+def make_board_with_piece(color, p_type, from_r, from_c):
+-+    grid = [[None for _ in range(8)] for _ in range(8)]
+-+    piece = Piece(color, p_type)
+-+    grid[from_r][from_c] = piece
+-+    return Board(grid), piece
+-+
+- 
+- @pytest.mark.parametrize("type, from_r, from_c, to_r, to_c, expected", [
+-     ('K', 0, 0, 0, 1, True),  # מלך: צעד אחד חוקי
+-@@ -11,5 +21,5 @@ from model.piece import Piece
+-     ('Q', 0, 0, 5, 5, True),  # מלכה: אלכסוני חוקי
+- ])
+- def test_piece_moves(type, from_r, from_c, to_r, to_c, expected):
+--    p = Piece('w', type)
+--    assert p.is_valid_move(from_r, from_c, to_r, to_c) == expected
+-\ No newline at end of file
+-+    board, piece = make_board_with_piece('w', type, from_r, from_c)
+-+    assert RuleEngine.is_legal(board, piece, to_r, to_c) == expected
+diff --git a/runner/game_logic.py b/runner/game_logic.py
+index 032868c..f686220 100644
+--- a/runner/game_logic.py
++++ b/runner/game_logic.py
+@@ -1,4 +1,4 @@
+-from config import COMMAND_CLICK, COMMAND_JUMP, COMMAND_PRINT, COMMAND_PRINT_BOARD, COMMAND_WAIT
++from config import COMMAND_CLICK, COMMAND_JUMP, COMMAND_PRINT, COMMAND_PRINT_BOARD, COMMAND_PRINT_HISTORY, COMMAND_PRINT_SCORE, COMMAND_WAIT
+ from .command_parser import InputParser
+ from model.board import Board
+ from game.controller import GameController
+@@ -51,3 +51,8 @@ class GameLogic:
+                 controller.handle_wait(int(p[1]))
+             elif p[0] == COMMAND_PRINT and p[1] == COMMAND_PRINT_BOARD:
+                 board.display()
++            elif p[0] == COMMAND_PRINT and p[1] == COMMAND_PRINT_SCORE:
++                print(controller.engine.get_score_text())
++            elif p[0] == COMMAND_PRINT and p[1] == COMMAND_PRINT_HISTORY:
++                for entry in controller.engine.move_history.all():
++                    print(entry)
+diff --git a/tests/test_score_and_history.py b/tests/test_score_and_history.py
+new file mode 100644
+index 0000000..93bd11b
+--- /dev/null
++++ b/tests/test_score_and_history.py
+@@ -0,0 +1,94 @@
++import pytest
++from model.board import Board
++from model.piece import Piece
++from game.controller import GameController
++
++
++@pytest.fixture
++def setup_controller():
++    grid = [[None for _ in range(8)] for _ in range(8)]
++    grid[7][4] = Piece('w', 'K')
++    grid[0][4] = Piece('b', 'K')
++    grid[3][3] = Piece('w', 'R')
++    grid[3][4] = Piece('b', 'P')  # one square away, capturable
++    board = Board(grid)
++    controller = GameController(board)
++    return controller, board
++
++
++def click_cell(controller, row, col):
++    controller.handle_click(col * 100 + 50, row * 100 + 50)
++
++
++def test_capturing_a_pawn_awards_one_point(setup_controller):
++    controller, board = setup_controller
++    click_cell(controller, 3, 3)   # select white rook
++    click_cell(controller, 3, 4)   # capture black pawn
++    controller.handle_wait(1000)
++
++    score = controller.engine.get_score()
++    assert score['w'] == 1
++    assert score['b'] == 0
++
++
++def test_score_text_reflects_captures(setup_controller):
++    controller, board = setup_controller
++    click_cell(controller, 3, 3)
++    click_cell(controller, 3, 4)
++    controller.handle_wait(1000)
++
++    assert controller.engine.get_score_text() == "White: 1  Black: 0"
++
++
++def test_move_history_records_both_players(setup_controller):
++    controller, board = setup_controller
++    click_cell(controller, 3, 3)   # white rook selects
++    click_cell(controller, 3, 4)   # white rook captures (also moves black king separately)
++    controller.handle_wait(1)
++
++    click_cell(controller, 0, 4)   # select black king
++    click_cell(controller, 1, 4)   # move it
++    controller.handle_wait(1)
++
++    history = controller.engine.move_history.all()
++    colors = [entry.color for entry in history]
++    assert 'w' in colors
++    assert 'b' in colors
++    assert len(history) == 2
++
++
++def test_move_history_entry_has_correct_fields(setup_controller):
++    controller, board = setup_controller
++    click_cell(controller, 3, 3)
++    click_cell(controller, 3, 4)
++    controller.handle_wait(1)
++
++    entry = controller.engine.move_history.all()[0]
++    assert entry.color == 'w'
++    assert entry.piece_type == 'R'
++    assert (entry.from_r, entry.from_c) == (3, 3)
++    assert (entry.to_r, entry.to_c) == (3, 4)
++    assert entry.received_at > 0
++
++
++def test_jump_counter_capture_awards_score_to_defender():
++    grid = [[None for _ in range(8)] for _ in range(8)]
++    grid[7][4] = Piece('w', 'K')
++    grid[0][4] = Piece('b', 'K')
++    defender = Piece('w', 'N')
++    attacker = Piece('b', 'R')
++    grid[4][4] = defender
++    grid[4][3] = attacker  # one square away -> 1000ms move, same arrival tick as the 1000ms jump
++    board = Board(grid)
++    controller = GameController(board)
++
++    # Defender jumps in place.
++    controller.handle_jump(4 * 100 + 50, 4 * 100 + 50)
++    # Attacker tries to capture the same square while defender is airborne.
++    click_cell(controller, 4, 3)
++    click_cell(controller, 4, 4)
++    controller.handle_wait(1000)  # both land at the same tick
++
++    score = controller.engine.get_score()
++    assert score['w'] == 5  # defender's side scored the attacking Rook's value
++    assert board.get_piece(4, 4) is defender

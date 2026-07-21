@@ -1,4 +1,4 @@
-from config import COMMAND_CLICK, COMMAND_JUMP, COMMAND_PRINT, COMMAND_PRINT_BOARD, COMMAND_WAIT
+from config import COMMAND_CLICK, COMMAND_JUMP, COMMAND_PRINT, COMMAND_PRINT_BOARD, COMMAND_PRINT_HISTORY, COMMAND_PRINT_SCORE, COMMAND_WAIT
 from .command_parser import InputParser
 from model.board import Board
 from game.controller import GameController
@@ -51,3 +51,8 @@ class GameLogic:
                 controller.handle_wait(int(p[1]))
             elif p[0] == COMMAND_PRINT and p[1] == COMMAND_PRINT_BOARD:
                 board.display()
+            elif p[0] == COMMAND_PRINT and p[1] == COMMAND_PRINT_SCORE:
+                print(controller.engine.get_score_text())
+            elif p[0] == COMMAND_PRINT and p[1] == COMMAND_PRINT_HISTORY:
+                for entry in controller.engine.move_history.all():
+                    print(entry)

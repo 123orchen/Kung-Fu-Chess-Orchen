@@ -22,6 +22,18 @@ COMMAND_JUMP = 'jump'
 COMMAND_WAIT = 'wait'
 COMMAND_PRINT = 'print'
 COMMAND_PRINT_BOARD = 'board'
+COMMAND_PRINT_SCORE = 'score'
+COMMAND_PRINT_HISTORY = 'history'
+
+# Point value of each captured piece, used for the scoreboard.
+PIECE_VALUES = {
+    PAWN: 1,
+    KNIGHT: 3,
+    BISHOP: 3,
+    ROOK: 5,
+    QUEEN: 9,
+    KING: 0,  # capturing the King ends the game - no score needed for it
+}
 
 # --- Rest / cooldown (Kung Fu Chess time-based logic) ---
 # After a piece finishes a move it can't move again until its rest ends.
@@ -35,6 +47,13 @@ STATE_MOVE = 'move'
 STATE_JUMP = 'jump'
 STATE_LONG_REST = 'long_rest'
 STATE_SHORT_REST = 'short_rest'
+
+# --- GUI layout (side move-log panels + name/score header/footer) ---
+LEFT_PANEL_WIDTH = 220
+RIGHT_PANEL_WIDTH = 220
+TOP_MARGIN = 90
+BOTTOM_MARGIN = 90
+PANEL_ROW_HEIGHT = 22
 
 PIECE_RULES = {
     PAWN: {'move_type': PAWN_MOVE_TYPE},
