@@ -1,0 +1,38 @@
+diff --git a/graphics/app.py b/graphics/app.py
+index 5901320..db21b18 100644
+--- a/graphics/app.py
++++ b/graphics/app.py
+@@ -6,7 +6,9 @@ from typing import List, Optional
+ 
+ import cv2
+ 
+-from config import CELL_SIZE
++from config import (
++    BOTTOM_MARGIN, CELL_SIZE, LEFT_PANEL_WIDTH, RIGHT_PANEL_WIDTH, TOP_MARGIN,
++)
+ from game.controller import GameController
+ from graphics.renderer import Renderer
+ from model.board import Board
+@@ -54,7 +56,21 @@ class GraphicsApp:
+         return Board(grid)
+ 
+     def run(self):
+-        cv2.namedWindow(WINDOW_NAME)
++        # The full canvas (board + side panels + header/footer) is often
++        # taller than a laptop screen. A plain cv2.namedWindow() defaults to
++        # WINDOW_AUTOSIZE - a fixed, non-resizable window at the canvas's
++        # native pixel size - so anything past the bottom of the screen
++        # becomes unreachable (that's what was cutting off the footer and
++        # even the top row). WINDOW_NORMAL makes it resizable, and we open
++        # it at a size that fits comfortably on common screens; OpenCV
++        # always reports mouse-click coordinates back in the *canvas's*
++        # original pixel space regardless of the on-screen window size, so
++        # this doesn't change any of the click/board-offset math.
++        canvas_width = LEFT_PANEL_WIDTH + CELL_SIZE * 8 + RIGHT_PANEL_WIDTH
++        canvas_height = TOP_MARGIN + CELL_SIZE * 8 + BOTTOM_MARGIN
++        cv2.namedWindow(WINDOW_NAME, cv2.WINDOW_NORMAL)
++        cv2.resizeWindow(WINDOW_NAME, min(canvas_width, 1000), min(canvas_height, 640))
++        cv2.moveWindow(WINDOW_NAME, 20, 20)
+         cv2.setMouseCallback(WINDOW_NAME, self._mouse_callback)
+ 
+         last_time = time.time()
