@@ -1,0 +1,488 @@
+diff --git a/game/controller.py b/game/controller.py
+index 398269b..e892760 100644
+--- a/game/controller.py
++++ b/game/controller.py
+@@ -6,7 +6,7 @@ from .real_time_arbiter import MoveScheduler
+ 
+ 
+ class GameController:
+-    def __init__(self, board, engine=None, scheduler=None):
++    def __init__(self, board, engine=None, scheduler=None, on_local_move=None):
+         self._board = board
+         self._scheduler = scheduler if scheduler is not None else MoveScheduler()
+         self._engine = engine if engine is not None else GameEngine(self._board, self._scheduler)
+@@ -15,6 +15,13 @@ class GameController:
+         self._time_ms = 0
+         self._selected_piece = None
+         self._pending_visual_move = None
++        # Online play: called as on_local_move(piece, from_rc, to_rc, move_type)
++        # right after a move made *by this client* is accepted, so it can be
++        # sent to the server. Not called for moves applied via apply_remote_move.
++        self._on_local_move = on_local_move
++        # Online play: when set, handle_click/handle_jump ignore any piece
++        # whose color isn't this one - a player can only move their own side.
++        self.local_color = None
+ 
+     @property
+     def scheduler(self):
+@@ -45,6 +52,9 @@ class GameController:
+ 
+         col, row = BoardMapper.pixel_to_coords(x, y)
+         target = self._board.get_piece(row, col)
++        if target and self.local_color is not None and target.color != self.local_color \
++                and self._selected_piece is None:
++            return  # online play: can't pick up the opponent's piece
+ 
+         if self._selected_piece is not None:
+             if target and target.color == self._selected_piece.color:
+@@ -67,8 +77,43 @@ class GameController:
+         target = self._board.get_piece(row, col)
+         if not target or not self._is_available(target):
+             return
++        if self.local_color is not None and target.color != self.local_color:
++            return  # online play: can't jump the opponent's piece
++
++        self._do_jump(target, row, col)
++        if self._on_local_move:
++            from_r, from_c = self._board.find_piece(target)
++            self._on_local_move(target, (from_r, from_c), (row, col), Move.MOVE_TYPE_JUMP)
++
++    def apply_remote_move(self, from_rc, to_rc, move_type=Move.MOVE_TYPE_NORMAL):
++        """Apply a move received from the network (the opponent's move)."""
++        from_r, from_c = from_rc
++        row, col = to_rc
++        piece = self._board.get_piece(from_r, from_c)
++        if piece is None or not self._is_available(piece):
++            return False
++
++        if move_type == Move.MOVE_TYPE_JUMP:
++            self._do_jump(piece, row, col)
++        else:
++            self._do_move(piece, from_r, from_c, row, col)
++        return True
++
++    def _do_jump(self, piece, row, col):
++        self._engine.request_move(piece, row, col, self._current_time + JUMP_DURATION_MS, move_type=Move.MOVE_TYPE_JUMP, current_time=self._current_time)
++
++    def _do_move(self, piece, from_r, from_c, row, col):
++        arrival_time = self._current_time + self._get_move_duration(from_r, from_c, row, col)
+ 
+-        self._engine.request_move(target, row, col, self._current_time + JUMP_DURATION_MS, move_type=Move.MOVE_TYPE_JUMP, current_time=self._current_time)
++        if self._engine.request_move(piece, row, col, arrival_time, current_time=self._current_time):
++            snapshot = self._board.snapshot_state()
++            self._board.execute_move(from_r, from_c, row, col)
++            self._pending_visual_move = {
++                'snapshot': snapshot,
++                'arrival_time': arrival_time,
++            }
++            return True
++        return False
+ 
+     def _attempt_move(self, row, col):
+         if self._selected_piece is None:
+@@ -80,15 +125,9 @@ class GameController:
+         if from_r is None or from_c is None:
+             return
+ 
+-        arrival_time = self._current_time + self._get_move_duration(from_r, from_c, row, col)
+-
+-        if self._engine.request_move(self._selected_piece, row, col, arrival_time, current_time=self._current_time):
+-            snapshot = self._board.snapshot_state()
+-            self._board.execute_move(from_r, from_c, row, col)
+-            self._pending_visual_move = {
+-                'snapshot': snapshot,
+-                'arrival_time': arrival_time,
+-            }
++        piece = self._selected_piece
++        if self._do_move(piece, from_r, from_c, row, col) and self._on_local_move:
++            self._on_local_move(piece, (from_r, from_c), (row, col), Move.MOVE_TYPE_NORMAL)
+ 
+     def _get_move_duration(self, from_r, from_c, to_r, to_c):
+         dr = abs(to_r - from_r)
+diff --git a/graphics/app.py b/graphics/app.py
+index db21b18..51e35dc 100644
+--- a/graphics/app.py
++++ b/graphics/app.py
+@@ -13,20 +13,49 @@ from game.controller import GameController
+ from graphics.renderer import Renderer
+ from model.board import Board
+ from model.piece import Piece
++from network.network_client import NetworkClient
+ 
+ WINDOW_NAME = "ChessGame"
+ GRAPHICS_ROOT = Path(__file__).resolve().parent
+ 
+ 
+ class GraphicsApp:
+-    def __init__(self, asset_root: str | Path | None = None):
++    def __init__(self, asset_root: str | Path | None = None, online: bool = False,
++                 server_uri: str = "ws://localhost:8000/ws"):
+         self.board = self._create_default_board()
+-        self.controller = GameController(self.board)
++        self.network: Optional[NetworkClient] = None
++
++        if online:
++            self.network = NetworkClient(server_uri)
++            print(f"Connecting to {server_uri} ...")
++            if not self.network.start():
++                raise RuntimeError(
++                    f"Could not connect/get assigned a color: {self.network.error or 'timed out'}"
++                )
++            print(f"Connected. Playing as {self.network.color}.")
++
++        self.controller = GameController(
++            self.board,
++            on_local_move=self._send_local_move if online else None,
++        )
++        if online:
++            self.controller.local_color = self.network.color  # 'w' or 'b'
++
+         asset_root = asset_root or (GRAPHICS_ROOT / "assets" / "pieces_mine")
+         self.renderer = Renderer(asset_root)
+         self.click_events: List[tuple[str, int, int]] = []
+         self.current_time_ms = 0
+ 
++    def _send_local_move(self, piece, from_rc, to_rc, move_type):
++        self.network.send_move(piece.color, piece.type, from_rc, to_rc, move_type)
++
++    def _apply_remote_moves(self):
++        if not self.network:
++            return
++        for msg in self.network.poll_incoming():
++            if msg.get("type") == "move":
++                self.controller.apply_remote_move(tuple(msg["from"]), tuple(msg["to"]), msg.get("move_type", "normal"))
++
+     def _create_default_board(self) -> Board:
+         """Create a standard chess starting position."""
+         grid: List[List[Optional[Piece]]] = []
+@@ -68,10 +97,14 @@ class GraphicsApp:
+         # this doesn't change any of the click/board-offset math.
+         canvas_width = LEFT_PANEL_WIDTH + CELL_SIZE * 8 + RIGHT_PANEL_WIDTH
+         canvas_height = TOP_MARGIN + CELL_SIZE * 8 + BOTTOM_MARGIN
+-        cv2.namedWindow(WINDOW_NAME, cv2.WINDOW_NORMAL)
+-        cv2.resizeWindow(WINDOW_NAME, min(canvas_width, 1000), min(canvas_height, 640))
+-        cv2.moveWindow(WINDOW_NAME, 20, 20)
+-        cv2.setMouseCallback(WINDOW_NAME, self._mouse_callback)
++        window_title = WINDOW_NAME
++        if self.network:
++            color_label = "White" if self.network.color == "w" else "Black"
++            window_title = f"{WINDOW_NAME} - Playing as {color_label}"
++        cv2.namedWindow(window_title, cv2.WINDOW_NORMAL)
++        cv2.resizeWindow(window_title, min(canvas_width, 1000), min(canvas_height, 640))
++        cv2.moveWindow(window_title, 20, 20)
++        cv2.setMouseCallback(window_title, self._mouse_callback)
+ 
+         last_time = time.time()
+         while True:
+@@ -81,6 +114,7 @@ class GraphicsApp:
+             self.current_time_ms += dt_ms
+             self.controller.handle_wait(dt_ms)
+ 
++            self._apply_remote_moves()
+             self._process_clicks()
+             image = self.renderer.render(
+                 self.board,
+@@ -88,12 +122,12 @@ class GraphicsApp:
+                 current_time_ms=self.current_time_ms,
+                 game_engine=self.controller.engine,
+             )
+-            cv2.imshow(WINDOW_NAME, image.img)
++            cv2.imshow(window_title, image.img)
+ 
+             key = cv2.waitKey(30) & 0xFF
+             if key == ord("q") or key == 27:
+                 break
+-            if cv2.getWindowProperty(WINDOW_NAME, cv2.WND_PROP_VISIBLE) < 1:
++            if cv2.getWindowProperty(window_title, cv2.WND_PROP_VISIBLE) < 1:
+                 break
+ 
+         cv2.destroyAllWindows()
+@@ -122,8 +156,8 @@ class GraphicsApp:
+             self.click_events.append(("jump", board_x, board_y))
+ 
+ 
+-def run():
+-    GraphicsApp().run()
++def run(online: bool = False, server_uri: str = "ws://localhost:8000/ws"):
++    GraphicsApp(online=online, server_uri=server_uri).run()
+ 
+ 
+ if __name__ == "__main__":
+diff --git a/main.py b/main.py
+index bd238e4..7faa2d7 100644
+--- a/main.py
++++ b/main.py
+@@ -12,7 +12,12 @@ if __name__ == "__main__":
+     if len(sys.argv) > 1 and sys.argv[1] == "--gui":
+         if run_graphics is None:
+             raise RuntimeError("Graphics app cannot be imported. Check that the graphics package exists.")
+-        run_graphics()
++        online = "--online" in sys.argv
++        server_uri = "ws://localhost:8000/ws"
++        for arg in sys.argv:
++            if arg.startswith("--server="):
++                server_uri = arg.split("=", 1)[1]
++        run_graphics(online=online, server_uri=server_uri)
+     else:
+         input_text = sys.stdin.read()
+         logic = GameLogic()
+diff --git a/network/__init__.py b/network/__init__.py
+new file mode 100644
+index 0000000..e69de29
+diff --git a/network/network_client.py b/network/network_client.py
+new file mode 100644
+index 0000000..67ed73f
+--- /dev/null
++++ b/network/network_client.py
+@@ -0,0 +1,93 @@
++"""Client-side WebSocket connection to the game server.
++
++The graphics app runs a synchronous, blocking loop (OpenCV's
++`cv2.waitKey`), so the WebSocket connection - which needs `asyncio` -
++runs on its own background thread with its own event loop. The two
++sides only talk through a thread-safe queue:
++
++  - Outgoing: `send_move(...)` schedules a send on the background loop.
++  - Incoming: messages from the server land in `self.incoming`; the
++    main/graphics thread calls `poll_incoming()` once per frame to
++    drain it and apply any opponent moves.
++"""
++import asyncio
++import json
++import logging
++import queue
++import threading
++from typing import Optional
++
++import websockets
++
++logger = logging.getLogger("kfc-client")
++
++
++class NetworkClient:
++    def __init__(self, uri: str = "ws://localhost:8000/ws"):
++        self.uri = uri
++        self.color: Optional[str] = None
++        self.incoming: "queue.Queue[dict]" = queue.Queue()
++        self.connected = False
++        self.error: Optional[str] = None
++
++        self._loop: Optional[asyncio.AbstractEventLoop] = None
++        self._ws = None
++        self._assigned = threading.Event()
++        self._thread = threading.Thread(target=self._run_loop, daemon=True)
++
++    def start(self, timeout: float = 5.0) -> bool:
++        """Connect and block until the server assigns a color (or times out)."""
++        self._thread.start()
++        self._assigned.wait(timeout=timeout)
++        return self.color is not None
++
++    def _run_loop(self):
++        self._loop = asyncio.new_event_loop()
++        asyncio.set_event_loop(self._loop)
++        try:
++            self._loop.run_until_complete(self._connect_and_listen())
++        except Exception as exc:  # connection refused, dropped, etc.
++            self.error = str(exc)
++            logger.warning("Network client stopped: %s", exc)
++        finally:
++            self.connected = False
++            self._assigned.set()  # unblock start() even if we never got assigned
++
++    async def _connect_and_listen(self):
++        async with websockets.connect(self.uri) as ws:
++            self._ws = ws
++            self.connected = True
++            async for raw in ws:
++                data = json.loads(raw)
++                msg_type = data.get("type")
++                if msg_type == "assign":
++                    self.color = data["color"]
++                    self._assigned.set()
++                elif msg_type == "error":
++                    self.error = data.get("message", "server error")
++                    self._assigned.set()
++                else:
++                    self.incoming.put(data)
++
++    def send_move(self, color: str, piece_type: str, from_rc, to_rc, move_type: str = "normal"):
++        if not self.connected or self._ws is None or self._loop is None:
++            return
++        payload = json.dumps({
++            "type": "move",
++            "color": color,
++            "piece": piece_type,
++            "from": list(from_rc),
++            "to": list(to_rc),
++            "move_type": move_type,
++        })
++        asyncio.run_coroutine_threadsafe(self._ws.send(payload), self._loop)
++
++    def poll_incoming(self):
++        """Drain and return every message received since the last call."""
++        messages = []
++        while True:
++            try:
++                messages.append(self.incoming.get_nowait())
++            except queue.Empty:
++                break
++        return messages
+diff --git a/requirements.txt b/requirements.txt
+new file mode 100644
+index 0000000..53b996a
+--- /dev/null
++++ b/requirements.txt
+@@ -0,0 +1,10 @@
++opencv-python
++numpy
++pytest
++
++# server (online play)
++fastapi
++uvicorn[standard]
++
++# client (online play)
++websockets
+diff --git a/server/__init__.py b/server/__init__.py
+new file mode 100644
+index 0000000..e69de29
+diff --git a/server/bus.py b/server/bus.py
+new file mode 100644
+index 0000000..fffd563
+--- /dev/null
++++ b/server/bus.py
+@@ -0,0 +1,32 @@
++"""A minimal, synchronous publish/subscribe bus.
++
++Different parts of the server (score updates, move-log updates, sound
++triggers, game start/end animations, ...) can subscribe to named events
++without knowing about each other. Whoever causes the event just calls
++`publish`; every subscriber registered for that event name gets called.
++
++This is intentionally small - no async, no priorities, no once-only
++subscriptions - because right now it only needs to support a basic
++"move happened" event. More event types can subscribe/publish the same
++way as later stages (score, sound, animations) are added.
++"""
++import threading
++from collections import defaultdict
++
++
++class Bus:
++    def __init__(self):
++        self._subscribers = defaultdict(list)
++        self._lock = threading.Lock()
++
++    def subscribe(self, event_type: str, callback):
++        """Register `callback(data)` to be called whenever `event_type` is published."""
++        with self._lock:
++            self._subscribers[event_type].append(callback)
++
++    def publish(self, event_type: str, data=None):
++        """Call every subscriber registered for `event_type` with `data`."""
++        with self._lock:
++            callbacks = list(self._subscribers.get(event_type, ()))
++        for callback in callbacks:
++            callback(data)
+diff --git a/server/server.py b/server/server.py
+new file mode 100644
+index 0000000..4ab7509
+--- /dev/null
++++ b/server/server.py
+@@ -0,0 +1,95 @@
++"""Stage A server: single-process FastAPI server, one WebSocket endpoint.
++
++Scope on purpose (matches the first stage of the assignment):
++  - Exactly one game / one board. No login, no rooms, no ELO yet - those
++    are later stages.
++  - First client to connect is White, second is Black. A third connection
++    is rejected (spectators come in a later stage, alongside rooms).
++  - A client sends a "move" message; the server relays it to the other
++    player as-is. The server does not validate chess rules - each client
++    runs the same engine locally and is trusted to only send legal moves
++    for its own color (this can be hardened later if needed).
++  - The Bus is wired in now (as required) and used to log every move;
++    later stages can add more subscribers (score, sound, animations)
++    without touching this file.
++
++Run with:  uvicorn server.server:app --reload
++"""
++import json
++import logging
++from typing import Dict, Optional
++
++from fastapi import FastAPI, WebSocket, WebSocketDisconnect
++
++from server.bus import Bus
++
++logging.basicConfig(level=logging.INFO)
++logger = logging.getLogger("kfc-server")
++
++app = FastAPI()
++bus = Bus()
++
++
++def _log_move(data):
++    logger.info("move: %s", data)
++
++
++bus.subscribe("move", _log_move)
++
++
++class GameRoom:
++    """Stage A: exactly one game. Rooms/multiple games arrive in a later stage."""
++
++    def __init__(self):
++        self.players: Dict[str, WebSocket] = {}  # 'w'/'b' -> websocket (matches Piece.color)
++
++    def assign_color(self) -> Optional[str]:
++        if "w" not in self.players:
++            return "w"
++        if "b" not in self.players:
++            return "b"
++        return None  # full - spectators not supported yet
++
++
++room = GameRoom()
++
++
++@app.websocket("/ws")
++async def ws_endpoint(websocket: WebSocket):
++    await websocket.accept()
++
++    color = room.assign_color()
++    if color is None:
++        await websocket.send_text(json.dumps({"type": "error", "message": "Game is full"}))
++        await websocket.close()
++        return
++
++    room.players[color] = websocket
++    await websocket.send_text(json.dumps({"type": "assign", "color": color}))
++    logger.info("Player connected as %s (players now: %s)", color, list(room.players))
++
++    try:
++        while True:
++            raw = await websocket.receive_text()
++            try:
++                data = json.loads(raw)
++            except json.JSONDecodeError:
++                logger.warning("Ignoring non-JSON message: %r", raw)
++                continue
++
++            if data.get("type") == "move":
++                if data.get("color") != color:
++                    logger.warning("Player %s tried to send a move for the other color", color)
++                    continue
++                bus.publish("move", data)
++                await _relay_to_opponent(color, raw)
++    except WebSocketDisconnect:
++        logger.info("Player %s disconnected", color)
++        room.players.pop(color, None)
++        # Stage A: no auto-resign countdown yet - added in a later stage.
++
++
++async def _relay_to_opponent(sender_color: str, raw: str):
++    for other_color, ws in room.players.items():
++        if other_color != sender_color:
++            await ws.send_text(raw)
