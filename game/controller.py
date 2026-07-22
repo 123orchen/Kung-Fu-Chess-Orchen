@@ -6,7 +6,7 @@ from .real_time_arbiter import MoveScheduler
 
 
 class GameController:
-    def __init__(self, board, engine=None, scheduler=None):
+    def __init__(self, board, engine=None, scheduler=None, on_local_move=None):
         self._board = board
         self._scheduler = scheduler if scheduler is not None else MoveScheduler()
         self._engine = engine if engine is not None else GameEngine(self._board, self._scheduler)
@@ -15,6 +15,13 @@ class GameController:
         self._time_ms = 0
         self._selected_piece = None
         self._pending_visual_move = None
+        # Online play: called as on_local_move(piece, from_rc, to_rc, move_type)
+        # right after a move made *by this client* is accepted, so it can be
+        # sent to the server. Not called for moves applied via apply_remote_move.
+        self._on_local_move = on_local_move
+        # Online play: when set, handle_click/handle_jump ignore any piece
+        # whose color isn't this one - a player can only move their own side.
+        self.local_color = None
 
     @property
     def scheduler(self):
@@ -45,6 +52,9 @@ class GameController:
 
         col, row = BoardMapper.pixel_to_coords(x, y)
         target = self._board.get_piece(row, col)
+        if target and self.local_color is not None and target.color != self.local_color \
+                and self._selected_piece is None:
+            return  # online play: can't pick up the opponent's piece
 
         if self._selected_piece is not None:
             if target and target.color == self._selected_piece.color:
@@ -67,8 +77,43 @@ class GameController:
         target = self._board.get_piece(row, col)
         if not target or not self._is_available(target):
             return
+        if self.local_color is not None and target.color != self.local_color:
+            return  # online play: can't jump the opponent's piece
 
-        self._engine.request_move(target, row, col, self._current_time + JUMP_DURATION_MS, move_type=Move.MOVE_TYPE_JUMP, current_time=self._current_time)
+        self._do_jump(target, row, col)
+        if self._on_local_move:
+            from_r, from_c = self._board.find_piece(target)
+            self._on_local_move(target, (from_r, from_c), (row, col), Move.MOVE_TYPE_JUMP)
+
+    def apply_remote_move(self, from_rc, to_rc, move_type=Move.MOVE_TYPE_NORMAL):
+        """Apply a move received from the network (the opponent's move)."""
+        from_r, from_c = from_rc
+        row, col = to_rc
+        piece = self._board.get_piece(from_r, from_c)
+        if piece is None or not self._is_available(piece):
+            return False
+
+        if move_type == Move.MOVE_TYPE_JUMP:
+            self._do_jump(piece, row, col)
+        else:
+            self._do_move(piece, from_r, from_c, row, col)
+        return True
+
+    def _do_jump(self, piece, row, col):
+        self._engine.request_move(piece, row, col, self._current_time + JUMP_DURATION_MS, move_type=Move.MOVE_TYPE_JUMP, current_time=self._current_time)
+
+    def _do_move(self, piece, from_r, from_c, row, col):
+        arrival_time = self._current_time + self._get_move_duration(from_r, from_c, row, col)
+
+        if self._engine.request_move(piece, row, col, arrival_time, current_time=self._current_time):
+            snapshot = self._board.snapshot_state()
+            self._board.execute_move(from_r, from_c, row, col)
+            self._pending_visual_move = {
+                'snapshot': snapshot,
+                'arrival_time': arrival_time,
+            }
+            return True
+        return False
 
     def _attempt_move(self, row, col):
         if self._selected_piece is None:
@@ -80,15 +125,9 @@ class GameController:
         if from_r is None or from_c is None:
             return
 
-        arrival_time = self._current_time + self._get_move_duration(from_r, from_c, row, col)
-
-        if self._engine.request_move(self._selected_piece, row, col, arrival_time, current_time=self._current_time):
-            snapshot = self._board.snapshot_state()
-            self._board.execute_move(from_r, from_c, row, col)
-            self._pending_visual_move = {
-                'snapshot': snapshot,
-                'arrival_time': arrival_time,
-            }
+        piece = self._selected_piece
+        if self._do_move(piece, from_r, from_c, row, col) and self._on_local_move:
+            self._on_local_move(piece, (from_r, from_c), (row, col), Move.MOVE_TYPE_NORMAL)
 
     def _get_move_duration(self, from_r, from_c, to_r, to_c):
         dr = abs(to_r - from_r)

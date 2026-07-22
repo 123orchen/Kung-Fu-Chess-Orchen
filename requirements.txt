@@ -1,0 +1,10 @@
+opencv-python
+numpy
+pytest
+
+# server (online play)
+fastapi
+uvicorn[standard]
+
+# client (online play)
+websockets

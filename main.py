@@ -12,7 +12,12 @@ if __name__ == "__main__":
     if len(sys.argv) > 1 and sys.argv[1] == "--gui":
         if run_graphics is None:
             raise RuntimeError("Graphics app cannot be imported. Check that the graphics package exists.")
-        run_graphics()
+        online = "--online" in sys.argv
+        server_uri = "ws://localhost:8000/ws"
+        for arg in sys.argv:
+            if arg.startswith("--server="):
+                server_uri = arg.split("=", 1)[1]
+        run_graphics(online=online, server_uri=server_uri)
     else:
         input_text = sys.stdin.read()
         logic = GameLogic()
