@@ -10,11 +10,16 @@ class GameEngine:
         self._board = board
         self._scheduler = scheduler
         self._game_over = False
+        self._winner = None
         self._move_history = MoveHistory()
         self._score = {WHITE_TURN: 0, BLACK_TURN: 0}
 
     def is_game_over(self):
         return self._game_over
+
+    def get_winner(self):
+        """Color ('w'/'b') that captured the opposing king, or None if the game isn't over."""
+        return self._winner
 
     @property
     def move_history(self):
@@ -55,6 +60,7 @@ class GameEngine:
                 self._award_capture(m.piece.color, captured_piece.type)
                 if captured_piece.type == 'K':
                     self._game_over = True
+                    self._winner = m.piece.color
 
     def request_move(self, piece, to_r, to_c, arrival_time, move_type=Move.MOVE_TYPE_NORMAL, current_time=None):
         if self._game_over or self._scheduler.is_piece_moving(piece):

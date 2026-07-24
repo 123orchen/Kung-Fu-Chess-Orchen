@@ -19,11 +19,18 @@ if __name__ == "__main__":
                 server_uri = arg.split("=", 1)[1]
 
         username = None
+        password = None
         if online:
-            # Stage B: login with username, done in the shell (not the GUI).
+            # Stage B/C: login with username + password, done in the shell
+            # (not the GUI). First login for a username registers it.
             username = input("Enter username: ").strip() or "Player"
+            try:
+                import getpass
+                password = getpass.getpass("Enter password: ")
+            except Exception:
+                password = input("Enter password: ")
 
-        run_graphics(online=online, server_uri=server_uri, username=username)
+        run_graphics(online=online, server_uri=server_uri, username=username, password=password)
     else:
         input_text = sys.stdin.read()
         logic = GameLogic()

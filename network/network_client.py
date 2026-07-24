@@ -24,23 +24,32 @@ logger = logging.getLogger("kfc-client")
 
 
 class NetworkClient:
-    def __init__(self, uri: str = "ws://localhost:8000/ws", username: str = "Player"):
-        self.uri = f"{uri}?username={quote(username)}"
+    def __init__(self, uri: str = "ws://localhost:8000/ws", username: str = "Player", password: str = ""):
+        self.uri = f"{uri}?username={quote(username)}&password={quote(password)}"
         self.username = username
+        self.rating: Optional[int] = None
         self.color: Optional[str] = None
+        self.game_id: Optional[str] = None
+        self.opponent: Optional[str] = None
         self.incoming: "queue.Queue[dict]" = queue.Queue()
         self.connected = False
         self.error: Optional[str] = None
 
         self._loop: Optional[asyncio.AbstractEventLoop] = None
         self._ws = None
-        self._assigned = threading.Event()
+        self._logged_in = threading.Event()
+        self._matched = threading.Event()
         self._thread = threading.Thread(target=self._run_loop, daemon=True)
 
     def start(self, timeout: float = 5.0) -> bool:
-        """Connect and block until the server assigns a color (or times out)."""
+        """Connect and block until login succeeds or fails (or times out)."""
         self._thread.start()
-        self._assigned.wait(timeout=timeout)
+        self._logged_in.wait(timeout=timeout)
+        return self.connected and self.error is None
+
+    def wait_for_match(self, timeout: float = 65.0) -> bool:
+        """Block until matchmaking finds an opponent (or times out / fails)."""
+        self._matched.wait(timeout=timeout)
         return self.color is not None
 
     def _run_loop(self):
@@ -53,7 +62,8 @@ class NetworkClient:
             logger.warning("Network client stopped: %s", exc)
         finally:
             self.connected = False
-            self._assigned.set()  # unblock start() even if we never got assigned
+            self._logged_in.set()  # unblock start()/wait_for_match() even on early failure
+            self._matched.set()
 
     async def _connect_and_listen(self):
         async with websockets.connect(self.uri) as ws:
@@ -62,12 +72,21 @@ class NetworkClient:
             async for raw in ws:
                 data = json.loads(raw)
                 msg_type = data.get("type")
-                if msg_type == "assign":
+                if msg_type == "login_ok":
+                    self.rating = data.get("rating")
+                    self._logged_in.set()
+                elif msg_type == "matched":
                     self.color = data["color"]
-                    self._assigned.set()
+                    self.game_id = data.get("game_id")
+                    self.opponent = data.get("opponent")
+                    self._matched.set()
+                elif msg_type == "no_match":
+                    self.error = "No opponent found within the wait time"
+                    self._matched.set()
                 elif msg_type == "error":
                     self.error = data.get("message", "server error")
-                    self._assigned.set()
+                    self._logged_in.set()
+                    self._matched.set()
                 else:
                     self.incoming.put(data)
 
@@ -82,6 +101,12 @@ class NetworkClient:
             "to": list(to_rc),
             "move_type": move_type,
         })
+        asyncio.run_coroutine_threadsafe(self._ws.send(payload), self._loop)
+
+    def send_game_over(self, winner_color: str):
+        if not self.connected or self._ws is None or self._loop is None:
+            return
+        payload = json.dumps({"type": "game_over", "winner": winner_color})
         asyncio.run_coroutine_threadsafe(self._ws.send(payload), self._loop)
 
     def poll_incoming(self):

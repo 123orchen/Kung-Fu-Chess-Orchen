@@ -21,18 +21,21 @@ GRAPHICS_ROOT = Path(__file__).resolve().parent
 
 class GraphicsApp:
     def __init__(self, asset_root: str | Path | None = None, online: bool = False,
-                 server_uri: str = "ws://localhost:8000/ws", username: str | None = None):
+                 server_uri: str = "ws://localhost:8000/ws", username: str | None = None,
+                 password: str | None = None):
         self.board = self._create_default_board()
         self.network: Optional[NetworkClient] = None
 
         if online:
-            self.network = NetworkClient(server_uri, username=username or "Player")
+            self.network = NetworkClient(server_uri, username=username or "Player", password=password or "")
             print(f"Connecting to {server_uri} as {username or 'Player'} ...")
             if not self.network.start():
-                raise RuntimeError(
-                    f"Could not connect/get assigned a color: {self.network.error or 'timed out'}"
-                )
-            print(f"Connected. Playing as {self.network.color}.")
+                raise RuntimeError(f"Login failed: {self.network.error or 'timed out'}")
+            print(f"Logged in. Rating: {self.network.rating}. Looking for a match (up to 60s)...")
+            if not self.network.wait_for_match():
+                raise RuntimeError(f"Matchmaking failed: {self.network.error or 'timed out'}")
+            print(f"Matched! Playing as {self.network.color} vs {self.network.opponent} "
+                  f"(game {self.network.game_id}).")
 
         self.controller = GameController(
             self.board,
@@ -45,6 +48,7 @@ class GraphicsApp:
         self.renderer = Renderer(asset_root)
         self.click_events: List[tuple[str, int, int]] = []
         self.current_time_ms = 0
+        self._game_over_reported = False
 
     def _send_local_move(self, piece, from_rc, to_rc, move_type):
         self.network.send_move(piece.color, piece.type, from_rc, to_rc, move_type)
@@ -55,6 +59,18 @@ class GraphicsApp:
         for msg in self.network.poll_incoming():
             if msg.get("type") == "move":
                 self.controller.apply_remote_move(tuple(msg["from"]), tuple(msg["to"]), msg.get("move_type", "normal"))
+            elif msg.get("type") == "game_over":
+                print(f"Game over. Winner: {msg.get('winner')}. "
+                      f"New ratings - White: {msg.get('white_rating')}, Black: {msg.get('black_rating')}")
+            elif msg.get("type") == "opponent_disconnected":
+                print(f"Opponent disconnected. Auto-resign in {msg.get('seconds')}s if they don't return.")
+
+    def _report_game_over_if_needed(self):
+        if not self.network or self._game_over_reported:
+            return
+        if self.controller.engine.is_game_over():
+            self._game_over_reported = True
+            self.network.send_game_over(self.controller.engine.get_winner())
 
     def _create_default_board(self) -> Board:
         """Create a standard chess starting position."""
@@ -115,6 +131,7 @@ class GraphicsApp:
             self.controller.handle_wait(dt_ms)
 
             self._apply_remote_moves()
+            self._report_game_over_if_needed()
             self._process_clicks()
             image = self.renderer.render(
                 self.board,
@@ -156,8 +173,9 @@ class GraphicsApp:
             self.click_events.append(("jump", board_x, board_y))
 
 
-def run(online: bool = False, server_uri: str = "ws://localhost:8000/ws", username: str | None = None):
-    GraphicsApp(online=online, server_uri=server_uri, username=username).run()
+def run(online: bool = False, server_uri: str = "ws://localhost:8000/ws", username: str | None = None,
+        password: str | None = None):
+    GraphicsApp(online=online, server_uri=server_uri, username=username, password=password).run()
 
 
 if __name__ == "__main__":
