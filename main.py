@@ -20,15 +20,24 @@ if __name__ == "__main__":
 
         username = None
         password = None
+        for arg in sys.argv:
+            if arg.startswith("--user="):
+                username = arg.split("=", 1)[1]
+            elif arg.startswith("--pass="):
+                password = arg.split("=", 1)[1]
+
         if online:
             # Stage B/C: login with username + password, done in the shell
             # (not the GUI). First login for a username registers it.
-            username = input("Enter username: ").strip() or "Player"
-            try:
-                import getpass
-                password = getpass.getpass("Enter password: ")
-            except Exception:
-                password = input("Enter password: ")
+            # Can be passed as --user=NAME --pass=SECRET to skip the prompts.
+            if username is None:
+                username = input("Enter username: ").strip() or "Player"
+            if password is None:
+                try:
+                    import getpass
+                    password = getpass.getpass("Enter password: ")
+                except Exception:
+                    password = input("Enter password: ")
 
         run_graphics(online=online, server_uri=server_uri, username=username, password=password)
     else:
