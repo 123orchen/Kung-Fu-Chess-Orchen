@@ -21,13 +21,13 @@ GRAPHICS_ROOT = Path(__file__).resolve().parent
 
 class GraphicsApp:
     def __init__(self, asset_root: str | Path | None = None, online: bool = False,
-                 server_uri: str = "ws://localhost:8000/ws"):
+                 server_uri: str = "ws://localhost:8000/ws", username: str | None = None):
         self.board = self._create_default_board()
         self.network: Optional[NetworkClient] = None
 
         if online:
-            self.network = NetworkClient(server_uri)
-            print(f"Connecting to {server_uri} ...")
+            self.network = NetworkClient(server_uri, username=username or "Player")
+            print(f"Connecting to {server_uri} as {username or 'Player'} ...")
             if not self.network.start():
                 raise RuntimeError(
                     f"Could not connect/get assigned a color: {self.network.error or 'timed out'}"
@@ -100,7 +100,7 @@ class GraphicsApp:
         window_title = WINDOW_NAME
         if self.network:
             color_label = "White" if self.network.color == "w" else "Black"
-            window_title = f"{WINDOW_NAME} - Playing as {color_label}"
+            window_title = f"{WINDOW_NAME} - {self.network.username} ({color_label})"
         cv2.namedWindow(window_title, cv2.WINDOW_NORMAL)
         cv2.resizeWindow(window_title, min(canvas_width, 1000), min(canvas_height, 640))
         cv2.moveWindow(window_title, 20, 20)
@@ -156,8 +156,8 @@ class GraphicsApp:
             self.click_events.append(("jump", board_x, board_y))
 
 
-def run(online: bool = False, server_uri: str = "ws://localhost:8000/ws"):
-    GraphicsApp(online=online, server_uri=server_uri).run()
+def run(online: bool = False, server_uri: str = "ws://localhost:8000/ws", username: str | None = None):
+    GraphicsApp(online=online, server_uri=server_uri, username=username).run()
 
 
 if __name__ == "__main__":

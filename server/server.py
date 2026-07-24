@@ -38,10 +38,11 @@ bus.subscribe("move", _log_move)
 
 
 class GameRoom:
-    """Stage A: exactly one game. Rooms/multiple games arrive in a later stage."""
+    """Stage A/B: exactly one game. Rooms/multiple games arrive in a later stage."""
 
     def __init__(self):
-        self.players: Dict[str, WebSocket] = {}  # 'w'/'b' -> websocket (matches Piece.color)
+        # 'w'/'b' -> {"ws": WebSocket, "username": str}
+        self.players: Dict[str, dict] = {}
 
     def assign_color(self) -> Optional[str]:
         if "w" not in self.players:
@@ -58,15 +59,21 @@ room = GameRoom()
 async def ws_endpoint(websocket: WebSocket):
     await websocket.accept()
 
+    # Stage B: username is sent as a query param, e.g. /ws?username=Dana
+    # ("just for presentation" per the spec - no password/verification yet,
+    # that's a later stage). Fall back to a placeholder if it's missing.
+    username = websocket.query_params.get("username") or "Anonymous"
+
     color = room.assign_color()
     if color is None:
         await websocket.send_text(json.dumps({"type": "error", "message": "Game is full"}))
         await websocket.close()
         return
 
-    room.players[color] = websocket
-    await websocket.send_text(json.dumps({"type": "assign", "color": color}))
-    logger.info("Player connected as %s (players now: %s)", color, list(room.players))
+    room.players[color] = {"ws": websocket, "username": username}
+    await websocket.send_text(json.dumps({"type": "assign", "color": color, "username": username}))
+    logger.info("%s connected as %s (players now: %s)",
+                username, color, {c: p["username"] for c, p in room.players.items()})
 
     try:
         while True:
@@ -84,12 +91,12 @@ async def ws_endpoint(websocket: WebSocket):
                 bus.publish("move", data)
                 await _relay_to_opponent(color, raw)
     except WebSocketDisconnect:
-        logger.info("Player %s disconnected", color)
+        logger.info("%s (%s) disconnected", username, color)
         room.players.pop(color, None)
         # Stage A: no auto-resign countdown yet - added in a later stage.
 
 
 async def _relay_to_opponent(sender_color: str, raw: str):
-    for other_color, ws in room.players.items():
+    for other_color, player in room.players.items():
         if other_color != sender_color:
-            await ws.send_text(raw)
+            await player["ws"].send_text(raw)

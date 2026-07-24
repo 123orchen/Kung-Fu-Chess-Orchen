@@ -16,6 +16,7 @@ import logging
 import queue
 import threading
 from typing import Optional
+from urllib.parse import quote
 
 import websockets
 
@@ -23,8 +24,9 @@ logger = logging.getLogger("kfc-client")
 
 
 class NetworkClient:
-    def __init__(self, uri: str = "ws://localhost:8000/ws"):
-        self.uri = uri
+    def __init__(self, uri: str = "ws://localhost:8000/ws", username: str = "Player"):
+        self.uri = f"{uri}?username={quote(username)}"
+        self.username = username
         self.color: Optional[str] = None
         self.incoming: "queue.Queue[dict]" = queue.Queue()
         self.connected = False

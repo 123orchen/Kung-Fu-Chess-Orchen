@@ -17,7 +17,13 @@ if __name__ == "__main__":
         for arg in sys.argv:
             if arg.startswith("--server="):
                 server_uri = arg.split("=", 1)[1]
-        run_graphics(online=online, server_uri=server_uri)
+
+        username = None
+        if online:
+            # Stage B: login with username, done in the shell (not the GUI).
+            username = input("Enter username: ").strip() or "Player"
+
+        run_graphics(online=online, server_uri=server_uri, username=username)
     else:
         input_text = sys.stdin.read()
         logic = GameLogic()
